@@ -3,6 +3,16 @@
 // Times are in minutes of play unless the name says seconds.
 
 export const tuning = {
+  // ---- feature switches: turn a feature off to test the others without it ----
+  features: {
+    weather: true, // off: the weather never pushes anything
+    conditions: true, // off: colonies never drift, chores do nothing, quality is luck plus compost only (packet 01)
+    moisture: true, // off: moisture stays in band for every colony
+    air: true, // off: air stays in band for every colony
+    light: true, // off: light stays in band for every colony
+    envPieces: true, // off: environment pieces count as needs only and hold nothing steady
+  },
+
   // ---- time ----
   secondsPerMinute: 60, // seconds in a minute of play; lower it to make the whole game run faster
   tickSeconds: 1, // largest slice of time the engine advances in one go; smaller is finer and slower
@@ -13,6 +23,7 @@ export const tuning = {
     multiplier: 1664525, // LCG multiplier; changing it changes every random roll
     increment: 1013904223, // LCG increment; changing it changes every random roll
     modulus: 4294967296, // LCG modulus (2 to the 32); do not change
+    weatherSalt: 7919, // offsets the weather's own random stream, so weather never changes buyer or quality rolls
   },
 
   // ---- garden and grid ----
@@ -41,12 +52,42 @@ export const tuning = {
   fruitingGrowRate: 0.5, // growth speed of a colony that is still fruiting, as a share of established speed
   unpickedMinutes: 8, // how long a ready mushroom waits before it turns into a compost pile
 
+  // ---- weather ----
+  weather: {
+    changeMinutes: 5, // how long each spell of weather lasts
+    driftPerMinute: 0.07, // how far a condition moves per minute toward the level the weather sets (conditions run 0 to 1)
+    kinds: {
+      clear: { weight: 4, moisture: 0.45, air: 0.5, light: 0.6 }, // weight: how often it comes; the rest: the level each condition drifts toward
+      sunny: { weight: 3, moisture: 0.3, air: 0.45, light: 0.8 }, // dries a little, brightens
+      hot: { weight: 1, moisture: 0.15, air: 0.35, light: 0.95 }, // too much sun: dry and glaring
+      overcast: { weight: 3, moisture: 0.5, air: 0.4, light: 0.3 }, // dim and mild
+      drizzle: { weight: 2, moisture: 0.7, air: 0.45, light: 0.3 }, // damp
+      rain: { weight: 2, moisture: 0.95, air: 0.5, light: 0.2 }, // soaking: too much for most
+      breezy: { weight: 2, moisture: 0.4, air: 0.7, light: 0.55 }, // fresh air, dries a little
+      windy: { weight: 1, moisture: 0.3, air: 0.95, light: 0.5 }, // battering wind, dries
+      still: { weight: 2, moisture: 0.5, air: 0.15, light: 0.5 }, // stale air
+    },
+  },
+
+  // ---- condition bands: the range of a condition a species is happy in ----
+  bands: {
+    low: { low: 0, high: 0.4 }, // species that like it low
+    mid: { low: 0.3, high: 0.7 }, // species that like it in the middle
+    high: { low: 0.6, high: 1 }, // species that like it high
+  },
+
   // ---- quality ----
   minQuality: 1, // lowest star rating
   maxQuality: 5, // highest star rating
   qualityWeights: [10, 30, 35, 18, 7], // luck: relative chance of 1, 2, 3, 4, 5 stars
   compostQualityBonus: 1, // stars added to the next grow of a composted colony
   qualityPrice: [0.7, 0.85, 1, 1.25, 1.6], // price multiplier for 1, 2, 3, 4, 5 stars
+  quality: {
+    goodShare: 0.9, // share of a grow each condition must spend in band to earn the in-band bonus
+    inBandStars: 1, // stars added when all three conditions earned it
+    neglectShare: 0.5, // a condition in band for less than this share of a grow counts as neglected
+    neglectStars: 1, // stars taken off per neglected condition (never below minQuality)
+  },
 
   // ---- basket and ageing ----
   basketSize: 12, // how many mushrooms the basket holds
@@ -125,7 +166,7 @@ export const tuning = {
     lobster_mushroom: { tier: 5, stab: 0.4, price: 50 }, // tier 5
   },
 
-  // ---- habitat piece costs in coins ----
+  // ---- habitat and environment piece costs in coins ----
   pieceCost: {
     straw_bed: 10, // needed by Oyster
     wood_chips: 12, // needed by Wine cap, Enoki
@@ -136,8 +177,13 @@ export const tuning = {
     oak: 150, // opens Chanterelle, Black trumpet
     pine: 160, // opens Porcini, Hedgehog, Matsutake
     old_oak: 400, // opens Maitake, Truffle
-    mister: 50, // counts only as a need in this packet; no moisture effect yet
-    drainage_bed: 120, // counts only as a need in this packet; no moisture effect yet
+    mister: 50, // keeps moisture from falling below band; also a need for three species
+    fan: 45, // keeps air from falling below band
+    shade_cloth: 35, // keeps light from rising above band
+    rain_cover: 40, // keeps moisture from rising above band
+    drainage_bed: 120, // keeps moisture from rising above band; also a need for two species
+    windbreak: 55, // keeps air from rising above band
+    soaking_trough: 30, // does nothing yet (log soaking is a later packet)
   },
 
   eventLogSize: 6, // how many recent messages the engine remembers
@@ -164,6 +210,14 @@ export const tuning = {
     pileSize: 0.24, // compost pile square size, as a share of a cell
     reachAlpha: 0.12, // opacity of the reach ring around the character
     percent: 100, // for turning a share into a percentage bar
+    condBars: {
+      width: 0.56, // width of a colony's condition bars, as a share of a cell
+      height: 3, // height of one condition bar, in pixels
+      gap: 2, // gap between condition bars, in pixels
+      marker: 3, // width of the marker showing the current level, in pixels
+      top: 0.1, // where the bars start below the colony's centre, as a share of a cell
+      labelLift: 0.14, // how far the colony's text moves up to make room, as a share of a cell
+    },
     colors: {
       creek: "#7fb4cf", // creek strip
       road: "#c9b48a", // road strip
@@ -183,6 +237,9 @@ export const tuning = {
       player: "#c2410c", // the character
       buyer: "#2f5d8a", // buyers
       lightText: "#ffffff", // text on dark shapes
+      barTrack: "#b9ad92", // condition bar background
+      barBand: "#7fae6b", // the stretch of a condition bar the species likes
+      barBad: "#c0392b", // condition marker when out of band
     },
   },
 };
