@@ -1,6 +1,7 @@
 // Canvas drawing. Flat placeholder shapes with text labels. Reads state, never changes it.
 
 import { cellKey, cellCentre, findById, isEdge, canBuyCell, buyerPosition } from "../engine/rules.js";
+import { featureOn, bandFor, isInBand } from "../engine/conditions.js";
 
 export function canvasSize(tuning) {
   const g = tuning.grid;
@@ -32,6 +33,26 @@ function drawLabel(ctx, tuning, lines, cx, cy, color, px) {
 function fullCircle(ctx, cx, cy, r) {
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
+}
+
+// Three small bars for an established colony: moisture, air, light from top to bottom.
+// The lighter stretch is the band the species likes; the marker is where it is now.
+function drawCondBars(ctx, content, tuning, colony, cx, top) {
+  const ui = tuning.ui;
+  const bars = ui.condBars;
+  const width = bars.width * ui.cellPx;
+  const left = cx - width / 2;
+  let y = top;
+  for (const condition of content.conditions) {
+    const band = bandFor(content, tuning, colony.species, condition);
+    ctx.fillStyle = ui.colors.barTrack;
+    ctx.fillRect(left, y, width, bars.height);
+    ctx.fillStyle = ui.colors.barBand;
+    ctx.fillRect(left + band.low * width, y, (band.high - band.low) * width, bars.height);
+    ctx.fillStyle = isInBand(content, tuning, colony, condition) ? ui.colors.outline : ui.colors.barBad;
+    ctx.fillRect(left + colony[condition] * width - bars.marker / 2, y - 1, bars.marker, bars.height + 2);
+    y += bars.height + bars.gap;
+  }
 }
 
 export function drawWorld(ctx, state, content, tuning, view) {
@@ -100,14 +121,16 @@ export function drawWorld(ctx, state, content, tuning, view) {
         ctx.setLineDash(colony.stage === "fruiting" ? ui.wildDash : []);
         ctx.stroke();
         ctx.setLineDash([]);
-        const lines = [species.short, status];
-        if (colony.composted) lines.push("+compost");
-        drawLabel(ctx, tuning, lines, cx, cy, col.outline, ui.smallPx);
+        const lines = [species.short, status + (colony.composted ? " +c" : "")];
+        const tended = colony.stage === "established" && featureOn(tuning, "conditions");
+        const lift = tended ? ui.condBars.labelLift * c : 0;
+        drawLabel(ctx, tuning, lines, cx, cy - lift, col.outline, ui.smallPx);
+        if (tended) drawCondBars(ctx, content, tuning, colony, cx, cy + ui.condBars.top * c);
         if (colony.pile > 0) {
           const p = ui.pileSize * c;
           ctx.fillStyle = col.pile;
-          ctx.fillRect(sx(x + 1) - p - ui.cellGap, sy(y + 1) - p - ui.cellGap, p, p);
-          drawLabel(ctx, tuning, [String(colony.pile)], sx(x + 1) - p / 2 - ui.cellGap, sy(y + 1) - p / 2 - ui.cellGap, col.lightText, ui.smallPx);
+          ctx.fillRect(sx(x + 1) - p - ui.cellGap, sy(y) + ui.cellGap, p, p);
+          drawLabel(ctx, tuning, [String(colony.pile)], sx(x + 1) - p / 2 - ui.cellGap, sy(y) + p / 2 + ui.cellGap, col.lightText, ui.smallPx);
         }
       }
     }

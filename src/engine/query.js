@@ -2,6 +2,7 @@
 // E-key action; packet 04's bots can use them too. Nothing here changes state.
 
 import { cellCentre, findById, isNear, distance, needsAt, buyerPosition } from "./rules.js";
+import { worstCondition } from "./conditions.js";
 
 // The action the E key should do right now, or null.
 // Returns { action, label }. action can be passed straight to engine.act().
@@ -26,12 +27,17 @@ export function suggestAction(state, content, tuning, selectedSpore) {
     const cell = state.cells[key];
     if (!cell.colony) continue;
     const c = cell.colony;
-    if (c.ready) offer(cellCentre(cell.x, cell.y), { type: "pick", x: cell.x, y: cell.y }, "pick " + nameOf(c.species));
-    else if (c.pile > 0) offer(cellCentre(cell.x, cell.y), { type: "collectCompost", x: cell.x, y: cell.y }, "collect compost");
+    const at = cellCentre(cell.x, cell.y);
+    const worst = worstCondition(content, tuning, c);
+    if (c.ready) offer(at, { type: "pick", x: cell.x, y: cell.y }, "pick " + nameOf(c.species));
+    else if (c.pile > 0) offer(at, { type: "collectCompost", x: cell.x, y: cell.y }, "collect compost");
+    else if (worst) {
+      offer(at, { type: "tend", x: cell.x, y: cell.y, condition: worst.condition }, worst.chore + " the " + nameOf(c.species));
+    }
   }
   if (best) return { action: best.action, label: best.label };
 
-  // Nothing to gather or sell nearby: offer to start a colony on a free cell.
+  // Nothing to gather, tend or sell nearby: offer to start a colony on a free cell.
   if (!selectedSpore || !(state.spores[selectedSpore] > 0)) return null;
   let fit = null;
   let any = null;
