@@ -1,0 +1,12 @@
+{
+  "name": "mushroom-garden",
+  "private": true,
+  "type": "module",
+  "description": "Top-down mockup of the mushroom garden core loop. No dependencies.",
+  "scripts": {
+    "test": "node --test",
+    "serve": "node tools/serve.mjs",
+    "build:single": "node tools/build-single.mjs"
+  },
+  "engines": { "node": ">=22" }
+}
