@@ -16,16 +16,18 @@ A cozy, unpunishing economy game about a small mushroom garden. Species arrive w
 
 | What | File |
 |---|---|
-| The rules as currently scoped, open questions, decision log | `docs/design-v0_1.md` |
-| Every tunable number, labeled with what happens when it changes | `shared/tuning.js` (arrives with the next lab update) |
-| The economy lab, a single HTML file | `tools/lab.html` (arrives with the next lab update) |
+| The rules as currently scoped, open questions, decision log | `docs/design-v0_2.md` (v0.1 kept for history) |
+| Every tunable number, labeled with what happens when it changes | `shared/tuning.js` |
+| The economy lab, a single HTML file that reads the tuning file | `tools/lab.html` |
+
+Open `tools/lab.html` in a browser from a local clone to use the lab. It loads `../shared/tuning.js`, so edit the tuning file and reload.
 
 ## How work happens here
 
 - Ideas are worked out in chat first, then written into `docs/`.
 - Tunable values live in one isolated tuning file, edited directly.
 - Verified results are stamped into the file they describe, with the date and the evidence.
-- Design docs are versioned by filename (`design-v0_1.md`, `design-v0_2.md`), and older versions stay.
+- Design docs are versioned by filename, and older versions stay.
 
 ## Hosting
 
