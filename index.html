@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mushroom Garden Mockup</title>
+<style>
+/* Layout: the garden canvas on the left, a narrow field-notebook panel on the right; stacks on narrow screens. */
+:root {
+  --ground: #f2f0e6;
+  --panel: #fbfaf4;
+  --ink: #2b2a22;
+  --muted: #6b6a5c;
+  --line: #d3cfbd;
+  --moss: #3f6b3a;
+  --spore: #a2542a;
+  --bar: #5c8a4a;
+  --bar-dried: #b08a3e;
+  --body-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --data-font: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #1c1e18; --panel: #25281f; --ink: #ecead9; --muted: #a5a48f; --line: #3d4133;
+    --moss: #9cc48f; --spore: #e0946a; --bar: #86b874; --bar-dried: #d1ab5c; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #1c1e18; --panel: #25281f; --ink: #ecead9; --muted: #a5a48f; --line: #3d4133;
+  --moss: #9cc48f; --spore: #e0946a; --bar: #86b874; --bar-dried: #d1ab5c; color-scheme: dark;
+}
+body { margin: 0; background: var(--ground); color: var(--ink); font: 14px/1.4 var(--body-font); }
+.page { padding-inline: 16px; padding-block: 10px; display: flex; flex-direction: column; gap: 8px; }
+.top { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
+.top h1 { font-size: 17px; margin: 0; color: var(--moss); letter-spacing: 0.01em; }
+.keys { color: var(--muted); font-size: 12.5px; }
+kbd { font: 11.5px var(--data-font); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--panel); color: var(--ink); }
+.stage { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+#world { max-width: 100%; height: auto; border: 1px solid var(--line); background: var(--panel); display: block; }
+#world.build { cursor: crosshair; }
+.side { flex: 1 1 300px; min-width: 0; max-height: 616px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.side h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 3px; font-weight: 600; }
+#stats { font: 13px var(--data-font); font-variant-numeric: tabular-nums; }
+#stats b { color: var(--moss); font-size: 15px; }
+#hint { font-weight: 600; min-height: 1.4em; }
+#message { color: var(--spore); min-height: 1.4em; }
+.row { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.row .name { flex: 0 0 9.5em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .stars { flex: 0 0 5em; color: var(--spore); letter-spacing: 1px; }
+.row .tag { flex: 0 0 3.2em; font-size: 11px; color: var(--muted); }
+.bar { flex: 1 1 40px; height: 7px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--bar); }
+.bar.dried i { background: var(--bar-dried); }
+.note { color: var(--muted); font-size: 12.5px; }
+.buyer { border-left: 3px solid var(--moss); padding-left: 8px; font-size: 13px; }
+.buyer + .buyer { margin-top: 6px; }
+.sel { color: var(--moss); font-weight: 600; }
+#palette { display: flex; flex-wrap: wrap; gap: 6px; }
+#palette button { font: 12.5px var(--body-font); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px; cursor: pointer; text-align: left; }
+#palette button small { display: block; color: var(--muted); font-size: 11px; }
+#palette button[aria-pressed="true"] { border-color: var(--moss); box-shadow: inset 0 0 0 1px var(--moss); }
+#palette button:focus-visible { outline: 2px solid var(--spore); outline-offset: 1px; }
+</style>
+</head>
+<body>
+<!-- page:start -->
+<div class="page">
+  <div class="top">
+    <h1>Mushroom garden mockup</h1>
+    <div class="keys">
+      <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows walk
+      &nbsp; <kbd>E</kbd> act on the nearest thing
+      &nbsp; <kbd>Q</kbd> next spore
+      &nbsp; <kbd>C</kbd> compost a colony
+      &nbsp; <kbd>R</kbd> sell spare spores
+      &nbsp; <kbd>B</kbd> build mode
+      &nbsp; <kbd>P</kbd> pause
+    </div>
+  </div>
+  <div class="stage">
+    <canvas id="world" tabindex="0" aria-label="The garden, seen from above"></canvas>
+    <div class="side">
+      <div id="stats"></div>
+      <div>
+        <div id="hint"></div>
+        <div id="message"></div>
+      </div>
+      <div id="build" hidden>
+        <h2>Build: pick a piece, then click a cell you own</h2>
+        <div id="palette"></div>
+      </div>
+      <div><h2 id="basket-title">Basket</h2><div id="basket"></div></div>
+      <div><h2>Spores</h2><div id="spores"></div></div>
+      <div><h2>Buyers here now</h2><div id="buyers"></div></div>
+      <div class="note">Start: press B, place a Straw bed on one of your cells, press B again. A wild mushroom turns up at the dark green edge. Forage it, then press E on a free cell beside the bed to start a colony.</div>
+    </div>
+  </div>
+</div>
+<!-- page:end -->
+<script type="module" src="src/ui/main.js"></script>
+</body>
+</html>
