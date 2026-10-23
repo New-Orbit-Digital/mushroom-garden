@@ -37,6 +37,7 @@ body { margin: 0; background: var(--ground); color: var(--ink); font: 14px/1.4 v
 kbd { font: 11.5px var(--data-font); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--panel); color: var(--ink); }
 .stage { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
 #world { max-width: 100%; height: auto; border: 1px solid var(--line); background: var(--panel); display: block; }
+#world { cursor: pointer; }
 #world.build { cursor: crosshair; }
 .side { flex: 1 1 300px; min-width: 0; max-height: 616px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .side h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 3px; font-weight: 600; }
@@ -55,6 +56,9 @@ kbd { font: 11.5px var(--data-font); border: 1px solid var(--line); border-botto
 .buyer { border-left: 3px solid var(--moss); padding-left: 8px; font-size: 13px; }
 .buyer + .buyer { margin-top: 6px; }
 .sel { color: var(--moss); font-weight: 600; }
+.entry { font-size: 13px; }
+.entry + .entry { margin-top: 5px; }
+.entry .step { font: 11px var(--data-font); color: var(--spore); text-transform: uppercase; letter-spacing: 0.04em; }
 #palette { display: flex; flex-wrap: wrap; gap: 6px; }
 #palette button { font: 12.5px var(--body-font); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px; cursor: pointer; text-align: left; }
 #palette button small { display: block; color: var(--muted); font-size: 11px; }
@@ -68,11 +72,10 @@ kbd { font: 11.5px var(--data-font); border: 1px solid var(--line); border-botto
   <div class="top">
     <h1>Mushroom garden mockup</h1>
     <div class="keys">
-      <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows walk
-      &nbsp; <kbd>E</kbd> act on the nearest thing
+      Click to act on what's under the cursor
       &nbsp; <kbd>Q</kbd> next spore
-      &nbsp; <kbd>C</kbd> compost a colony
-      &nbsp; <kbd>R</kbd> sell spare spores
+      &nbsp; <kbd>C</kbd> compost the colony under the cursor
+      &nbsp; <kbd>R</kbd> sell spare spores to the buyer under the cursor
       &nbsp; <kbd>B</kbd> build mode
       &nbsp; <kbd>P</kbd> pause
     </div>
@@ -92,7 +95,8 @@ kbd { font: 11.5px var(--data-font); border: 1px solid var(--line); border-botto
       <div><h2 id="basket-title">Basket</h2><div id="basket"></div></div>
       <div><h2>Spores</h2><div id="spores"></div></div>
       <div><h2>Buyers here now</h2><div id="buyers"></div></div>
-      <div class="note">Start: press B, place a Straw bed on one of your cells, press B again. A wild mushroom turns up at the dark green edge. Forage it, then press E on a free cell beside the bed to start a colony.</div>
+      <div><h2 id="journal-title">Journal</h2><div id="journal"></div></div>
+      <div class="note">Start: press B, place a Straw bed on one of your cells, press B again. A wild mushroom turns up at the dark green edge. Click it to forage, then click a free cell beside the bed to start a colony.</div>
     </div>
   </div>
 </div>

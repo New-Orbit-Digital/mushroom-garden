@@ -8,6 +8,11 @@ export function cellCentre(x, y) {
   return { x: x + 1 / 2, y: y + 1 / 2 };
 }
 
+// "a" or "an" before a name, for messages: "an Oyster", "a Shiitake".
+export function aOrAn(name) {
+  return (/^[aeiou]/i.test(name) ? "an " : "a ") + name;
+}
+
 export function findById(list, id) {
   for (const item of list) if (item.id === id) return item;
   return null;
@@ -94,11 +99,92 @@ export function needsAt(state, content, tuning, speciesId, x, y) {
   return { ok: missing.length === 0, missing };
 }
 
-// A species turns up wild once at least one of its needed pieces is in the garden.
-export function wildEligible(state, content, speciesId) {
+// The four steps every species climbs, in order.
+export const LADDER = ["appear", "visit", "resident", "spread"];
+
+// Appear: its outline turns up at the edge once at least one of its needed pieces is in the garden.
+export function appearEligible(state, content, speciesId) {
   const species = findById(content.species, speciesId);
   for (const need of species.needs) if (state.pieceCounts[need] > 0) return true;
   return false;
+}
+
+// True when an established colony of a species is anywhere in the garden.
+export function establishedAnywhere(state, speciesId) {
+  for (const key of Object.keys(state.cells)) {
+    const c = state.cells[key].colony;
+    if (c && c.species === speciesId && c.stage === "established") return true;
+  }
+  return false;
+}
+
+// What a species still lacks before it visits: needed pieces not yet anywhere in the garden,
+// and for a parasite, an established host colony anywhere. Returns a list of names.
+export function visitMissing(state, content, speciesId) {
+  const species = findById(content.species, speciesId);
+  const missing = [];
+  for (const need of species.needs) if (!(state.pieceCounts[need] > 0)) missing.push(pieceName(content, need));
+  if (species.host && !establishedAnywhere(state, species.host)) {
+    missing.push("an established " + findById(content.species, species.host).name + " colony");
+  }
+  return missing;
+}
+
+// Visit: a wild flush can be foraged once every needed piece is somewhere in the garden.
+export function visitEligible(state, content, speciesId) {
+  return visitMissing(state, content, speciesId).length === 0;
+}
+
+// The piece two colonies need beside them to spread: the species' home, or its first need.
+export function homePiece(species) {
+  return species.home || species.needs[0];
+}
+
+// True when two different cells are within reach of each other.
+export function withinReach(tuning, a, b) {
+  const far = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+  return far > 0 && far <= tuning.reach;
+}
+
+// Owned cells within reach of a cell, in a fixed order (top to bottom, left to right).
+function cellsAround(state, tuning, x, y) {
+  const out = [];
+  for (let dy = -tuning.reach; dy <= tuning.reach; dy += 1) {
+    for (let dx = -tuning.reach; dx <= tuning.reach; dx += 1) {
+      if (dx === 0 && dy === 0) continue;
+      const cell = state.cells[cellKey(x + dx, y + dy)];
+      if (cell) out.push(cell);
+    }
+  }
+  return out;
+}
+
+// Whether the colony at (x, y) can spread now, and if so with which partner and onto which cell.
+// Returns { ok: true, partner: cell, target: cell } or { ok: false, reason }.
+export function spreadPlan(state, content, tuning, x, y) {
+  const cell = state.cells[cellKey(x, y)];
+  const c = cell ? cell.colony : null;
+  if (!c) return { ok: false, reason: "no colony there" };
+  const species = findById(content.species, c.species);
+  if (c.stage !== "established") return { ok: false, reason: "a fruiting colony cannot spread yet" };
+  if (c.restLeft > 0) return { ok: false, reason: "it is resting after spreading" };
+  const partners = cellsAround(state, tuning, x, y).filter((p) =>
+    p.colony && p.colony.species === c.species && p.colony.stage === "established" && !(p.colony.restLeft > 0));
+  if (!partners.length) return { ok: false, reason: "it needs a second established " + species.name + " colony beside it" };
+  const home = homePiece(species);
+  const homeBeside = (a) => cellsAround(state, tuning, a.x, a.y).some((p) => p.piece === home);
+  let homeFound = false;
+  for (const partner of partners) {
+    if (!homeBeside(cell) && !homeBeside(partner)) continue;
+    homeFound = true;
+    for (const target of cellsAround(state, tuning, x, y)) {
+      if (target.piece || target.colony || !withinReach(tuning, target, partner)) continue;
+      if (!needsAt(state, content, tuning, c.species, target.x, target.y).ok) continue;
+      return { ok: true, partner, target };
+    }
+  }
+  if (!homeFound) return { ok: false, reason: "they need " + pieceName(content, home) + " beside them" };
+  return { ok: false, reason: "it needs a free cell beside both colonies where " + species.name + "'s needs are met" };
 }
 
 export function buyerPosition(tuning, buyer) {
@@ -118,10 +204,6 @@ export function buyerPosition(tuning, buyer) {
 
 export function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-export function isNear(state, tuning, point) {
-  return distance(state.player, point) <= tuning.actReach;
 }
 
 // Price = species price x stability premium x quality x buyer taste,

@@ -1,14 +1,14 @@
 # Mushroom garden (working title)
 
-A cozy, unpunishing economy game about a small mushroom garden. Species arrive when the garden suits them, you cultivate them from spores, and buyers come to you by creek, by land and by letter.
+A garden game about silly invented mushrooms, built on Viva Piñata's systems: species arrive when the garden suits them, climb a four-step ladder, and every first earns a journal award. You cultivate them from spores, and buyers come to you by creek and by road.
 
-**Status:** first playable mockup. The core loop (walk, place habitat, forage, start a colony, harvest, basket ageing, sell) runs top-down in a browser with flat placeholder shapes, on a rules engine that a person plays and bots can later fast-forward. Weather, chores, letters, fixtures, the journal and pacing are not built yet (packets 02 to 04).
+**Status:** playable mockup. Top-down in a browser with flat placeholder shapes, on a rules engine that a person plays and bots can fast-forward. Built so far: the core loop (place habitat, forage, start a colony, harvest, basket ageing, sell), weather, conditions and chores, cursor-only controls, the species ladder (Appear, Visit, Resident, Spread), the journal and awards. Next: the rank clock, shops, visitors and helpers (packet 04), then threats, losses and variants (packet 05). Species are still v0.3 placeholders until the content pass.
 
 ## Ground rules
 
 - No time limit and no energy meter.
 - Time passes only while playing.
-- Nothing is lost for good: anything unpicked or unsold becomes another resource.
+- Losses can be real, but never block progress (design v0.4).
 - The garden is the main stage; buyers come to the player.
 - The 3D world is not built until most ideas are scoped.
 
@@ -20,17 +20,17 @@ node tools/serve.mjs
 
 Then open http://localhost:8080. Add `?seed=7` to the address for a different random game. There is no build step and nothing to install; Node 22 is needed only for the server and the tests.
 
-Keys: WASD or arrows walk, E acts on the nearest thing, Q picks which spore to plant, C composts a colony, R sells spare spores to the merchant, B toggles build mode (mouse places pieces and buys cells), P pauses.
+Controls: point at something to see what a click does, then click. Q picks which spore to plant, C composts the colony under the cursor, R sells spare spores to the buyer under the cursor, B toggles build mode (click places pieces and buys cells), P pauses.
 
 ## Where things are
 
 | What | Where |
 |---|---|
-| The rules as scoped, open questions, decision log | `docs/design-v0_2.md`, amended by `docs/design-v0_3.md` (v0.1 kept for history) |
+| The rules as scoped, open questions, decision log | `docs/design-v0_2.md`, amended by `docs/design-v0_3.md` and `docs/design-v0_4.md` (v0.1 kept for history) |
 | Every number, each with a one-line comment | `shared/tuning.js` |
 | Species, habitat pieces and buyers (lists, no numbers) | `shared/content.js` |
 | The rules engine: no screen, no clock, seeded randomness | `src/engine/` |
-| Canvas drawing, keyboard and mouse, side panel | `src/ui/` |
+| Canvas drawing, mouse and keys, side panel and journal | `src/ui/` |
 | The page | `index.html` |
 | Local server, scripted player, single-page build | `tools/` |
 | Tests (`node --test`) | `test/` |

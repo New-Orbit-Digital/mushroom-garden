@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { tuning, SPM, newGame, standAt } from "../tools/testkit.js";
+import { tuning, SPM, newGame } from "../tools/testkit.js";
 
 const g = tuning.grid;
 const BED = { x: g.startCol, y: g.startRow }; // an owned cell
@@ -10,7 +10,6 @@ const FAR = { x: g.startCol + 2, y: g.startRow + 1 }; // owned, two columns from
 function gameWithStrawBed() {
   const e = newGame();
   assert.equal(e.act({ type: "placePiece", piece: "straw_bed", ...BED }).ok, true);
-  standAt(e, BESIDE.x + 0.5, BESIDE.y + 0.5);
   return e;
 }
 
@@ -20,14 +19,14 @@ function startOyster(e) {
   return e.state.cells[BESIDE.x + "," + BESIDE.y].colony;
 }
 
-test("a wild species appears only once one of its needed pieces exists", () => {
+test("a one-need species appears and flushes once its piece exists, on an edge cell", () => {
   const e = newGame();
   e.step(5 * SPM);
   assert.deepEqual(e.state.wild, {});
 
   e.act({ type: "placePiece", piece: "straw_bed", ...BED });
   e.step(1);
-  assert.equal(e.state.wild.oyster.present, true);
+  assert.equal(e.state.wild.oyster.present, true, "its only need is placed, so Appear and Visit come together");
   assert.equal(e.state.wild.wine_cap, undefined);
   const w = e.state.wild.oyster;
   const onEdge = w.x === 0 || w.y === 0 || w.x === g.cols - 1 || w.y === g.rows - 1;
@@ -37,12 +36,6 @@ test("a wild species appears only once one of its needed pieces exists", () => {
 test("foraging gives one mushroom and one spore, and the wild one regrows", () => {
   const e = gameWithStrawBed();
   e.step(1);
-  const w = e.state.wild.oyster;
-  standAt(e, 7, 4);
-  if (Math.hypot(w.x + 0.5 - 7, w.y + 0.5 - 4) > tuning.actReach) {
-    assert.match(e.act({ type: "forage", species: "oyster" }).reason, /too far/);
-  }
-  standAt(e, w.x + 0.5, w.y + 0.5);
   assert.equal(e.act({ type: "forage", species: "oyster" }).ok, true);
   assert.equal(e.state.basket.length, 1);
   assert.equal(e.state.spores.oyster, 1);
@@ -67,13 +60,11 @@ test("starting a colony is refused without a spore, a free cell, or needs in rea
   assert.equal(notOwned.ok, false);
   assert.match(notOwned.reason, /not yours/);
 
-  standAt(e, FAR.x + 0.5, FAR.y + 0.5);
   const noNeeds = e.act({ type: "startColony", species: "oyster", ...FAR });
   assert.equal(noNeeds.ok, false);
   assert.match(noNeeds.reason, /needs Straw bed/);
 
   assert.equal(e.state.spores.oyster, 1, "a refused start keeps the spore");
-  standAt(e, BESIDE.x + 0.5, BESIDE.y + 0.5);
   assert.equal(e.act({ type: "startColony", species: "oyster", ...BESIDE }).ok, true);
   assert.equal(e.state.spores.oyster, 0);
 });
@@ -113,22 +104,17 @@ test("an unpicked mushroom becomes a compost pile, collected by hand, and gives 
   assert.equal(e.state.compost, 0, "compost stays on the cell until collected");
   assert.equal(e.state.basket.length, 0);
 
-  standAt(e, 1, 1);
-  assert.match(e.act({ type: "collectCompost", ...BESIDE }).reason, /too far/);
-  standAt(e, BESIDE.x + 0.5, BESIDE.y + 0.5);
   assert.equal(e.act({ type: "collectCompost", ...BESIDE }).ok, true);
   assert.equal(e.state.compost, 1);
   assert.equal(colony.pile, 0);
 });
 
-test("picking needs the player next to the colony and puts the mushroom in the basket", () => {
+test("picking puts the mushroom in the basket; picking an empty colony is refused", () => {
   const e = gameWithStrawBed();
   const colony = startOyster(e);
+  assert.match(e.act({ type: "pick", ...BESIDE }).reason, /nothing ready/);
   while (!colony.ready) e.step(1);
   const quality = colony.ready.quality;
-  standAt(e, 1, 1);
-  assert.match(e.act({ type: "pick", ...BESIDE }).reason, /too far/);
-  standAt(e, BESIDE.x + 0.5, BESIDE.y + 0.5);
   assert.equal(e.act({ type: "pick", ...BESIDE }).ok, true);
   assert.deepEqual(e.state.basket, [{ species: "oyster", quality, age: 0 }]);
   assert.equal(e.state.spores.oyster, 0, "picking gives no spore by itself");
@@ -164,7 +150,6 @@ test("Lobster mushroom needs an established Chanterelle colony within reach", ()
   assert.equal(e.act({ type: "placePiece", piece: "oak", ...oak }).ok, true);
   s.spores.lobster_mushroom = 1;
   s.spores.chanterelle = 1;
-  standAt(e, lobster.x + 0.5, lobster.y + 0.5);
 
   const noHost = e.act({ type: "startColony", species: "lobster_mushroom", ...lobster });
   assert.equal(noHost.ok, false);

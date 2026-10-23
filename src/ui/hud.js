@@ -1,7 +1,8 @@
-// The side panel: coins, weather, basket, spores, buyers and the build palette. Reads state, never changes it.
+// The side panel: coins, weather, basket, spores, buyers, the journal and the build palette. Reads state, never changes it.
 
 import { findById, placeablePieces, pieceName, cellCost, mushroomStage, stageShareLeft, salePrice } from "../engine/rules.js";
 import { featureOn } from "../engine/conditions.js";
+import { journal } from "../engine/query.js";
 import { formatClock } from "./draw.js";
 
 export function buildPalette(el, content, tuning, onSelect) {
@@ -29,6 +30,11 @@ export function markPalette(el, selectedPiece) {
   }
 }
 
+// A label as a sentence: capital first letter, one full stop at the end.
+export function sentence(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1) + (/[.!?]$/.test(text) ? "" : ".");
+}
+
 export function renderHud(els, state, content, tuning, view) {
   const ui = tuning.ui;
   const nameOf = (id) => findById(content.species, id).name;
@@ -51,10 +57,12 @@ export function renderHud(els, state, content, tuning, view) {
       "Build mode. Click a cell you own to place " + pieceName(content, view.selectedPiece) +
       " (" + tuning.pieceCost[view.selectedPiece] + " coins). Click a light green cell to buy it (" +
       cellCost(tuning, state.cellsBought) + " coins). B to leave.";
+  } else if (view.hint && view.hint.action) {
+    els.hint.textContent = "Click: " + view.hint.label;
   } else if (view.hint) {
-    els.hint.textContent = "E: " + view.hint.label;
+    els.hint.textContent = sentence(view.hint.label);
   } else {
-    els.hint.textContent = "Walk up to something and press E.";
+    els.hint.textContent = "Point at something to see what a click does.";
   }
   els.message.textContent = view.message || "";
 
@@ -101,11 +109,23 @@ export function renderHud(els, state, content, tuning, view) {
     const extras = [];
     if (!kind.acceptsDried) extras.push("fresh only");
     if (tuning.buyers[buyer.kind].driedBonus > 1) extras.push("pays extra for dried");
-    if (kind.buysSpores) extras.push("buys spare spores (R)");
+    if (kind.buysSpores) extras.push("buys spare spores: point at it and press R");
     html +=
       "<div class=\"buyer\"><b>" + kind.name + "</b> on the " + buyer.route + ", leaves in " +
       formatClock(tuning, buyer.total - buyer.elapsed) + "<br>wants " + wants.join("; ") +
       (extras.length ? "<br><span class=\"note\">" + extras.join(", ") + "</span>" : "") + "</div>";
   }
   els.buyers.innerHTML = html || "<div class=\"note\">Nobody right now. One comes by before long.</div>";
+
+  // Journal: each species that has appeared, its step on the ladder, and what comes next.
+  const book = journal(state, content, tuning);
+  els.journalTitle.textContent = "Journal · " + book.awards + " awards · " + book.xp + " xp";
+  html = "";
+  for (const entry of book.entries) {
+    html +=
+      "<div class=\"entry\"><b>" + entry.name + "</b> <span class=\"step\">" + entry.step + " · " +
+      entry.stepNumber + " of " + entry.steps + "</span><br><span class=\"note\">" + entry.next + "</span></div>";
+  }
+  if (book.unseen > 0) html += "<div class=\"note\">" + book.unseen + " species not seen yet.</div>";
+  els.journal.innerHTML = html;
 }

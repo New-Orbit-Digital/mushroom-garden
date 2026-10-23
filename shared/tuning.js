@@ -41,16 +41,28 @@ export const tuning = {
   cellBaseCost: 8, // coins for the first extra cell
   cellCostGrowth: 1.15, // each further cell costs this many times the one before
 
-  // ---- player ----
-  playerStart: { x: 7.5, y: 3.5 }, // where the character stands at the start, in cells
-  walkSpeed: 4, // cells walked per second
-  actReach: 1.5, // how close (in cells) the character must be to act on a thing
-  arriveDistance: 0.05, // how close counts as arrived when walking to a point
+  // ---- player (cursor only: no character on screen) ----
   startCoins: 30, // coins at the start of a game
+  pointReach: 0.6, // how close (in cells) a click must land to a buyer to count as on it
 
   // ---- colonies ----
   fruitingGrowRate: 0.5, // growth speed of a colony that is still fruiting, as a share of established speed
   unpickedMinutes: 8, // how long a ready mushroom waits before it turns into a compost pile
+
+  // ---- the species ladder (Appear, Visit, Resident, Spread) and journal awards ----
+  spreadRestMinutes: 6, // how long both parent colonies rest after a Spread before either can spread again
+  sevenColonies: 7, // established colonies of one species at once that earn its "seven" award
+  awards: {
+    xp: {
+      appear: 5, // experience for a species' first Appear (its outline at the edge)
+      visit: 10, // experience for a species' first forage
+      resident: 20, // experience for a species' first established colony
+      spread: 30, // experience for a species' first Spread
+      seven: 40, // experience for seven established colonies of one species at once
+      fiveStar: 15, // experience for a species' first 5-star harvest picked
+      sale: 10, // experience for the first sale to each buyer kind
+    },
+  },
 
   // ---- weather ----
   weather: {
@@ -116,7 +128,7 @@ export const tuning = {
     firstMinutes: 1.5, // when the first creek buyer drifts in
     everyMinutes: 4, // average gap between creek buyers
     jitterMinutes: 1, // the gap varies by up to this much either way
-    stayMinutes: 2, // how long a creek buyer takes to drift past (the time it is in reach)
+    stayMinutes: 2, // how long a creek buyer takes to drift past (the time it can be sold to)
   },
   land: {
     firstMinutes: 5, // when the first land merchant walks in
@@ -188,6 +200,13 @@ export const tuning = {
 
   eventLogSize: 6, // how many recent messages the engine remembers
 
+  // ---- scripted player (tools only; stands in for a person at the cursor) ----
+  bot: {
+    secondsPerAction: 2, // game time each action costs the scripted player, standing in for moving the cursor and clicking
+    cellReserve: 20, // coins the scripted player keeps back when buying cells
+    maxCells: 12, // the scripted player stops buying cells once it owns this many
+  },
+
   // ---- screen (mockup only) ----
   ui: {
     cellPx: 56, // size of one grid cell on screen, in pixels
@@ -205,10 +224,10 @@ export const tuning = {
     pieceInset: 0.1, // margin around a habitat square, as a share of a cell
     colonyRadius: 0.4, // colony circle radius, as a share of a cell
     wildRadius: 0.34, // wild mushroom circle radius, as a share of a cell
-    playerRadius: 0.22, // character circle radius, as a share of a cell
     buyerSize: 0.36, // buyer diamond half-size, as a share of a cell
     pileSize: 0.24, // compost pile square size, as a share of a cell
-    reachAlpha: 0.12, // opacity of the reach ring around the character
+    outlineAlpha: 0.5, // opacity of a species' outline at the edge (it has appeared but cannot be foraged yet)
+    hoverLineWidth: 3, // width of the frame drawn round the cell under the cursor
     percent: 100, // for turning a share into a percentage bar
     condBars: {
       width: 0.56, // width of a colony's condition bars, as a share of a cell
@@ -234,7 +253,7 @@ export const tuning = {
       outline: "#3b2f22", // outlines and dark text
       wild: "#fdf6e3", // wild mushroom fill
       pile: "#5a4028", // compost pile
-      player: "#c2410c", // the character
+      target: "#c2410c", // frame round the cell under the cursor
       buyer: "#2f5d8a", // buyers
       lightText: "#ffffff", // text on dark shapes
       barTrack: "#b9ad92", // condition bar background

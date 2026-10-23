@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { tuning, content, SPM, newGame, standAt, addBuyer, standByBuyer } from "../tools/testkit.js";
+import { tuning, content, SPM, newGame, addBuyer } from "../tools/testkit.js";
 import { freshSeconds, salePrice } from "../src/engine/rules.js";
 
 const driedAge = (id) => freshSeconds(tuning, id) + 1;
@@ -9,7 +9,6 @@ test("a restaurateur refuses dried mushrooms and takes fresh ones", () => {
   const e = newGame();
   const s = e.state;
   const buyer = addBuyer(e, "restaurateur", [{ species: "oyster", count: 3 }]);
-  standByBuyer(e, buyer);
   s.basket.push({ species: "oyster", quality: 3, age: driedAge("oyster") });
 
   const refused = e.act({ type: "sell", buyer: buyer.id });
@@ -33,7 +32,6 @@ test("the travelling merchant pays the dried bonus", () => {
   const e = newGame();
   const s = e.state;
   const buyer = addBuyer(e, "merchant", [{ species: "morel", count: 2 }]);
-  standByBuyer(e, buyer);
   s.basket.push({ species: "morel", quality: 3, age: driedAge("morel") });
 
   const sp = tuning.species.morel;
@@ -59,25 +57,25 @@ test("dried sells for driedShare of fresh; quality and the buyer's favourite rai
   assert.ok(salePrice(tuning, buyer, { species: "truffle", quality: 3, age: 0 }) > fresh);
 });
 
-test("selling out of reach is refused", () => {
+test("selling works while the buyer is here and is refused once it has gone", () => {
   const e = newGame();
   const s = e.state;
   const buyer = addBuyer(e, "market_boat", [{ species: "oyster", count: 3 }]);
-  s.basket.push({ species: "oyster", quality: 3, age: 0 });
-  standAt(e, 1, tuning.grid.rows - 1);
-  const far = e.act({ type: "sell", buyer: buyer.id });
-  assert.equal(far.ok, false);
-  assert.match(far.reason, /too far/);
-  assert.equal(s.basket.length, 1);
-  standByBuyer(e, buyer);
+  s.basket.push({ species: "oyster", quality: 3, age: 0 }, { species: "oyster", quality: 3, age: 0 });
   assert.equal(e.act({ type: "sell", buyer: buyer.id }).ok, true);
+  assert.equal(s.basket.length, 0);
+  s.basket.push({ species: "oyster", quality: 3, age: 0 });
+  e.step(buyer.total - buyer.elapsed);
+  const gone = e.act({ type: "sell", buyer: buyer.id });
+  assert.equal(gone.ok, false);
+  assert.match(gone.reason, /gone/);
+  assert.equal(s.basket.length, 1);
 });
 
 test("a buyer takes only what it asked for, up to the count", () => {
   const e = newGame();
   const s = e.state;
   const buyer = addBuyer(e, "market_boat", [{ species: "oyster", count: 2 }]);
-  standByBuyer(e, buyer);
   for (let i = 0; i < 3; i += 1) s.basket.push({ species: "oyster", quality: 3, age: 0 });
   s.basket.push({ species: "wine_cap", quality: 3, age: 0 });
   const sold = e.act({ type: "sell", buyer: buyer.id });
@@ -91,11 +89,9 @@ test("only the merchant buys spare spores, and one of each is kept", () => {
   const s = e.state;
   s.spores.oyster = 3;
   const boat = addBuyer(e, "market_boat", [{ species: "oyster", count: 2 }]);
-  standByBuyer(e, boat);
   assert.match(e.act({ type: "sell", buyer: boat.id, what: "spores" }).reason, /does not buy spores/);
 
   const merchant = addBuyer(e, "merchant", [{ species: "oyster", count: 2 }]);
-  standByBuyer(e, merchant);
   const sold = e.act({ type: "sell", buyer: merchant.id, what: "spores" });
   assert.equal(sold.ok, true);
   assert.equal(sold.sold, 3 - tuning.keepSpores);
