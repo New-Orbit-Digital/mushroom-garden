@@ -15,7 +15,7 @@ const WAIT = tuning.tiers[1].waitMinutes * SPM;
 const CONDITIONS = content.conditions;
 
 function game(features = {}, seed = 1) {
-  const t = tuningWithFeatures(features);
+  const t = tuningWithFeatures({ ranks: false, ...features });
   const e = createEngine({ tuning: t, content, seed });
   e.state.coins = 100000;
   assert.equal(e.act({ type: "placePiece", piece: "straw_bed", ...BED }).ok, true);

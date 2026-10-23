@@ -11,6 +11,7 @@ export const tuning = {
     air: true, // off: air stays in band for every colony
     light: true, // off: light stays in band for every colony
     envPieces: true, // off: environment pieces count as needs only and hold nothing steady
+    ranks: true, // off: every species, piece, buyer and cell is open from the start (packet 03 behaviour)
   },
 
   // ---- time ----
@@ -48,6 +49,20 @@ export const tuning = {
   // ---- colonies ----
   fruitingGrowRate: 0.5, // growth speed of a colony that is still fruiting, as a share of established speed
   unpickedMinutes: 8, // how long a ready mushroom waits before it turns into a compost pile
+
+  // ---- the rank clock: experience from awards fills ranks, and ranks release things ----
+  rank: {
+    firstXp: 25, // experience to go from rank 1 to rank 2
+    growth: 1.08, // each further rank costs this many times the one before
+    titleEvery: 5, // a new title every this many ranks (titles are listed in shared/content.js)
+  },
+  garden: {
+    cellCaps: [ // the most cells the player may own, from each rank on
+      { rank: 1, cells: 12 }, // at the start: room to double the first plot
+      { rank: 11, cells: 30 }, // garden space upgrade 1
+      { rank: 21, cells: 84 }, // garden space at maximum: the whole inner garden (12 x 7)
+    ],
+  },
 
   // ---- the species ladder (Appear, Visit, Resident, Spread) and journal awards ----
   spreadRestMinutes: 6, // how long both parent colonies rest after a Spread before either can spread again
@@ -137,6 +152,7 @@ export const tuning = {
     stayMinutes: 6, // how long a land merchant stands waiting
     walkMinutes: 0.4, // how long the merchant takes to walk in, and again to walk out
     standX: 7, // where along the road the merchant stands, in cells from the left
+    rank: 12, // the travelling merchant first comes by road at this rank
   },
 
   // ---- buyer kinds (ids match shared/content.js) ----
@@ -155,27 +171,47 @@ export const tuning = {
     5: { waitMinutes: 25, growMinutes: 8, wildRegrowMinutes: 8, demandWeight: 1.5 }, // tier 5
   },
 
-  // ---- species: tier, stability (0 spoils fast, 1 keeps), base price in coins ----
+  // ---- species: tier, stability (0 spoils fast, 1 keeps), base price in coins, rank at which it can first appear ----
   species: {
-    oyster: { tier: 1, stab: 0.6, price: 2 }, // tier 1 price range 2 to 4
-    wine_cap: { tier: 1, stab: 0.5, price: 3 }, // tier 1
-    field_mushroom: { tier: 1, stab: 0.5, price: 4 }, // tier 1
-    shiitake: { tier: 2, stab: 0.9, price: 5 }, // tier 2 price range 5 to 9
-    lions_mane: { tier: 2, stab: 0.4, price: 8 }, // tier 2
-    nameko: { tier: 2, stab: 0.3, price: 9 }, // tier 2
-    enoki: { tier: 2, stab: 0.6, price: 6 }, // tier 2
-    shaggy_mane: { tier: 3, stab: 0.1, price: 16 }, // tier 3 price range 10 to 16
-    blewit: { tier: 3, stab: 0.5, price: 10 }, // tier 3
-    parasol: { tier: 3, stab: 0.4, price: 13 }, // tier 3
-    chanterelle: { tier: 4, stab: 0.5, price: 22 }, // tier 4 price range 18 to 30
-    porcini: { tier: 4, stab: 0.7, price: 26 }, // tier 4
-    hedgehog: { tier: 4, stab: 0.6, price: 18 }, // tier 4
-    black_trumpet: { tier: 4, stab: 0.3, price: 30 }, // tier 4
-    morel: { tier: 5, stab: 0.8, price: 45 }, // tier 5 price range 35 to 60
-    maitake: { tier: 5, stab: 0.6, price: 38 }, // tier 5
-    matsutake: { tier: 5, stab: 0.5, price: 55 }, // tier 5
-    truffle: { tier: 5, stab: 0.7, price: 60 }, // tier 5
-    lobster_mushroom: { tier: 5, stab: 0.4, price: 50 }, // tier 5
+    oyster: { tier: 1, stab: 0.6, price: 2, rank: 1 }, // tier 1 price range 2 to 4
+    wine_cap: { tier: 1, stab: 0.5, price: 3, rank: 1 }, // tier 1
+    field_mushroom: { tier: 1, stab: 0.5, price: 4, rank: 1 }, // tier 1
+    shiitake: { tier: 2, stab: 0.9, price: 5, rank: 4 }, // tier 2 price range 5 to 9
+    lions_mane: { tier: 2, stab: 0.4, price: 8, rank: 6 }, // tier 2
+    nameko: { tier: 2, stab: 0.3, price: 9, rank: 6 }, // tier 2
+    enoki: { tier: 2, stab: 0.6, price: 6, rank: 4 }, // tier 2
+    shaggy_mane: { tier: 3, stab: 0.1, price: 16, rank: 9 }, // tier 3 price range 10 to 16
+    blewit: { tier: 3, stab: 0.5, price: 10, rank: 13 }, // tier 3
+    parasol: { tier: 3, stab: 0.4, price: 13, rank: 9 }, // tier 3
+    chanterelle: { tier: 4, stab: 0.5, price: 22, rank: 21 }, // tier 4 price range 18 to 30
+    porcini: { tier: 4, stab: 0.7, price: 26, rank: 26 }, // tier 4
+    hedgehog: { tier: 4, stab: 0.6, price: 18, rank: 26 }, // tier 4
+    black_trumpet: { tier: 4, stab: 0.3, price: 30, rank: 27 }, // tier 4
+    morel: { tier: 5, stab: 0.8, price: 45, rank: 30 }, // tier 5 price range 35 to 60
+    maitake: { tier: 5, stab: 0.6, price: 38, rank: 32 }, // tier 5
+    matsutake: { tier: 5, stab: 0.5, price: 55, rank: 33 }, // tier 5
+    truffle: { tier: 5, stab: 0.7, price: 60, rank: 36 }, // tier 5
+    lobster_mushroom: { tier: 5, stab: 0.4, price: 50, rank: 38 }, // tier 5
+  },
+
+  // ---- the rank at which each piece can first be placed ----
+  pieceRank: {
+    straw_bed: 1, // Oyster's bed: open from the start
+    wood_chips: 1, // Wine cap's bed: open from the start
+    compost_bed: 1, // Field mushroom's bed: open from the start
+    hardwood_log: 4, // the log drill: log species possible (with Shiitake and Enoki, which need it)
+    shade_cloth: 5, // first relief from weather
+    rain_cover: 5, // first relief from weather
+    mister: 6, // needed by the misty log species
+    drainage_bed: 7, // the trench spade: drainage beds
+    fan: 8, // more weather relief
+    windbreak: 8, // more weather relief
+    soil_bed: 9, // opens Parasol and Shaggy mane
+    soaking_trough: 9, // does nothing yet
+    leaf_litter: 13, // opens Blewit and the forest floor species
+    oak: 21, // opens the first tier 4 species
+    pine: 26, // opens Porcini, Hedgehog, Matsutake
+    old_oak: 30, // opens Maitake, Truffle
   },
 
   // ---- habitat and environment piece costs in coins ----

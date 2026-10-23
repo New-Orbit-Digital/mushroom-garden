@@ -78,7 +78,10 @@ export const content = {
     { id: "soaking_trough", name: "Soaking trough", short: "trough", holds: null, does: "nothing yet" },
   ],
 
-  // Fixtures. Inert until packet 03.
+  // Rank titles, one per tuning.rank.titleEvery ranks, from rank 1.
+  titles: ["New grower", "Grower", "Skilled grower", "Seasoned grower", "Expert grower", "Master grower", "Renowned grower", "Legendary grower", "Grand mycologist"],
+
+  // Fixtures. Inert until packet 04b.
   fixtures: [
     { id: "bigger_basket", name: "Bigger basket" },
     { id: "bulletin_board", name: "Bulletin board" },

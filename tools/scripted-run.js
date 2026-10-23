@@ -5,11 +5,13 @@
 // Used by the scripted tests and tools/stamp.mjs.
 // options.tuning: a tuning object to play under (default: shared/tuning.js).
 // options.tend: true makes it do chores; false or missing makes it neglect them.
+// options.explore: true makes it try each released habitat piece once, like a curious player;
+//   false or missing keeps packet 03's behaviour (a straw bed, then wood chips), so its baseline holds.
 
 import { tuning as sharedTuning } from "../shared/tuning.js";
 import { content } from "../shared/content.js";
 import { createEngine } from "../src/engine/engine.js";
-import { needsAt, mushroomStage, findById, spreadPlan, canBuyCell, cellCost } from "../src/engine/rules.js";
+import { needsAt, mushroomStage, findById, spreadPlan, canBuyCell, cellCost, placeablePieces, pieceReleased } from "../src/engine/rules.js";
 import { worstCondition } from "../src/engine/conditions.js";
 
 export function runScripted(seed, minutes, options = {}) {
@@ -82,11 +84,20 @@ export function runScripted(seed, minutes, options = {}) {
     for (const id of Object.keys(s.wild)) {
       if (room && s.wild[id].present) return act({ type: "forage", species: id }).ok;
     }
-    // 8. Once affordable, add wood chips on the far corner so a second species turns up.
+    // 8. Explorer: try each released habitat piece once, cheapest first, like a curious player: place it
+    //    on a free cell when it can be afforded with the reserve kept back.
+    // 8b. Otherwise (packet 03 behaviour): add wood chips on the far corner so a second species turns up.
     const corner = { x: start.startCol + start.startCols - 1, y: start.startRow };
     const cornerCell = s.cells[corner.x + "," + corner.y];
-    if (!s.pieceCounts.wood_chips && s.coins >= tuning.pieceCost.wood_chips && !cornerCell.piece && !cornerCell.colony) {
+    if (!options.explore && !s.pieceCounts.wood_chips && s.coins >= tuning.pieceCost.wood_chips && !cornerCell.piece && !cornerCell.colony) {
       return act({ type: "placePiece", piece: "wood_chips", ...corner }).ok;
+    }
+    const untried = placeablePieces(content)
+      .filter((p) => !s.pieceCounts[p.id] && pieceReleased(s, tuning, p.id) && content.species.some((sp) => sp.needs.includes(p.id)))
+      .sort((a, b) => tuning.pieceCost[a.id] - tuning.pieceCost[b.id]);
+    const freeCell = cells().find((c) => !c.piece && !c.colony);
+    if (options.explore && untried.length && freeCell && s.coins >= tuning.pieceCost[untried[0].id] + tuning.bot.cellReserve) {
+      return act({ type: "placePiece", piece: untried[0].id, x: freeCell.x, y: freeCell.y }).ok;
     }
     // 9. Buy cells, nearest the straw bed first, keeping a reserve, so colonies have room to spread.
     if (cells().length < tuning.bot.maxCells && s.coins >= cellCost(tuning, s.cellsBought) + tuning.bot.cellReserve) {

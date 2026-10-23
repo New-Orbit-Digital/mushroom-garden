@@ -102,8 +102,84 @@ export function needsAt(state, content, tuning, speciesId, x, y) {
 // The four steps every species climbs, in order.
 export const LADDER = ["appear", "visit", "resident", "spread"];
 
-// Appear: its outline turns up at the edge once at least one of its needed pieces is in the garden.
-export function appearEligible(state, content, speciesId) {
+// ---------- the rank clock ----------
+
+function ranksOn(tuning) {
+  return Boolean(tuning.features && tuning.features.ranks);
+}
+
+// Experience needed to go from a rank to the next one.
+export function xpForNextRank(tuning, rank) {
+  return Math.round(tuning.rank.firstXp * Math.pow(tuning.rank.growth, rank - 1));
+}
+
+// Total experience at which a rank begins.
+export function xpAtRank(tuning, rank) {
+  let total = 0;
+  for (let r = 1; r < rank; r += 1) total += xpForNextRank(tuning, r);
+  return total;
+}
+
+export function rankFromXp(tuning, xp) {
+  let rank = 1;
+  while (xp >= xpAtRank(tuning, rank + 1)) rank += 1;
+  return rank;
+}
+
+export function titleFor(content, tuning, rank) {
+  const index = Math.min(Math.floor((rank - 1) / tuning.rank.titleEvery), content.titles.length - 1);
+  return content.titles[index];
+}
+
+export function speciesReleased(state, tuning, speciesId) {
+  return !ranksOn(tuning) || state.rank >= tuning.species[speciesId].rank;
+}
+
+export function pieceReleased(state, tuning, pieceId) {
+  return !ranksOn(tuning) || state.rank >= tuning.pieceRank[pieceId];
+}
+
+// Road buyers wait for their rank; creek buyers come from the start.
+export function routeReleased(state, tuning, route) {
+  return route !== "road" || !ranksOn(tuning) || state.rank >= tuning.land.rank;
+}
+
+// The most cells the player may own at a rank, and the rank that next raises it (null if none).
+export function cellCap(state, tuning) {
+  if (!ranksOn(tuning)) return { cells: Infinity, nextRank: null };
+  let cells = 0;
+  let nextRank = null;
+  for (const cap of tuning.garden.cellCaps) {
+    if (state.rank >= cap.rank) cells = cap.cells;
+    else if (nextRank === null || cap.rank < nextRank) nextRank = cap.rank;
+  }
+  return { cells, nextRank };
+}
+
+// What a rank releases, as names, in a fixed order: a new title, species, pieces, garden space, buyers.
+export function releasesAt(content, tuning, rank) {
+  const out = [];
+  if (rank > 1 && (rank - 1) % tuning.rank.titleEvery === 0) out.push("the title " + titleFor(content, tuning, rank));
+  for (const species of content.species) if (tuning.species[species.id].rank === rank) out.push(species.name + " can appear");
+  for (const piece of placeablePieces(content)) if (tuning.pieceRank[piece.id] === rank) out.push(piece.name);
+  for (const cap of tuning.garden.cellCaps) if (cap.rank === rank && rank > 1) out.push("room for " + cap.cells + " cells");
+  if (tuning.land.rank === rank) out.push("the travelling merchant by road");
+  return out;
+}
+
+// The highest rank anything is scheduled for.
+export function lastScheduledRank(tuning) {
+  let last = tuning.land.rank;
+  for (const id of Object.keys(tuning.species)) last = Math.max(last, tuning.species[id].rank);
+  for (const id of Object.keys(tuning.pieceRank)) last = Math.max(last, tuning.pieceRank[id]);
+  for (const cap of tuning.garden.cellCaps) last = Math.max(last, cap.rank);
+  return last;
+}
+
+// Appear: its outline turns up at the edge once at least one of its needed pieces is in the garden,
+// and its rank has been reached.
+export function appearEligible(state, content, tuning, speciesId) {
+  if (!speciesReleased(state, tuning, speciesId)) return false;
   const species = findById(content.species, speciesId);
   for (const need of species.needs) if (state.pieceCounts[need] > 0) return true;
   return false;

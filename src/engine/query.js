@@ -3,7 +3,7 @@
 
 import {
   cellKey, findById, distance, needsAt, buyerPosition, pieceName, homePiece, spreadPlan,
-  visitEligible, visitMissing, LADDER, aOrAn,
+  visitEligible, visitMissing, LADDER, aOrAn, releasesAt, lastScheduledRank, xpAtRank, xpForNextRank,
 } from "./rules.js";
 import { worstCondition } from "./conditions.js";
 
@@ -97,6 +97,21 @@ export function nextCondition(state, content, tuning, speciesId) {
       " beside them and a free cell next to both.";
   }
   return "All four steps done.";
+}
+
+// The next rank that releases anything, and what: { rank, items } or null when nothing is left.
+export function nextRelease(state, content, tuning) {
+  const last = lastScheduledRank(tuning);
+  for (let rank = state.rank + 1; rank <= last; rank += 1) {
+    const items = releasesAt(content, tuning, rank);
+    if (items.length) return { rank, items };
+  }
+  return null;
+}
+
+// How far the experience is into the current rank: { rank, into, need }.
+export function rankProgress(state, tuning) {
+  return { rank: state.rank, into: state.xp - xpAtRank(tuning, state.rank), need: xpForNextRank(tuning, state.rank) };
 }
 
 // One entry per species that has appeared, in content order, plus totals.

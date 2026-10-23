@@ -10,7 +10,17 @@ import { createEngine } from "../src/engine/engine.js";
 export { tuning, content };
 export const SPM = tuning.secondsPerMinute;
 
+// The shared tuning with the rank clock switched off: everything open from the start.
+// Tests of earlier features use it so they can place any piece; test/ranks.test.js uses the shared tuning.
+export const openTuning = structuredClone(tuning);
+openTuning.features.ranks = false;
+
 export function newGame(seed = 1) {
+  return createEngine({ tuning: openTuning, content, seed });
+}
+
+// A game under the shared tuning, ranks and all.
+export function rankedGame(seed = 1) {
   return createEngine({ tuning, content, seed });
 }
 
