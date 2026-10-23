@@ -7,7 +7,7 @@ The contract (`claude/packet-03-cursor-ladder-journal.md`) was drafted and built
 ## Verification stamp
 
 ```
-Packet 03 completed 23 Oct 2026 at d88cdc5ffd7d9da0a16b9f4d05db342bb7f7a73f
+Packet 03 completed 23 Oct 2026 at d88cdc512e26ce17a61a505a8573b756c61747e8
 Tests: 55 passed / 55 total   CI: pass, https://github.com/New-Orbit-Digital/mushroom-garden/actions/runs/39961185846/job/120439284619
 Determinism check: pass
 Scripted 30-minute run, seed 1, tending: 160 coins; ladder: 2 species resident, 1 at appear; 12 awards; 135 xp
