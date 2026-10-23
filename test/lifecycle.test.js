@@ -191,5 +191,5 @@ test("build mode: cells cost more each time and must touch an owned cell; pieces
   assert.ok(second.cost > first.cost);
   s.coins = 0;
   assert.match(e.act({ type: "placePiece", piece: "straw_bed", x: g.startCol, y: g.startRow }).reason, /costs/);
-  assert.match(e.act({ type: "placePiece", piece: "fan", x: g.startCol, y: g.startRow }).reason, /cannot be placed yet/);
+  assert.match(e.act({ type: "placePiece", piece: "dock", x: g.startCol, y: g.startRow }).reason, /cannot be placed yet/);
 });

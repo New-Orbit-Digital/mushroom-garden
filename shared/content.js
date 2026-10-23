@@ -1,13 +1,36 @@
-// Mushroom garden content lists: species, habitat pieces, buyers.
-// Lists only. Every number (tier, price, cost, stability) is in shared/tuning.js under the same id.
-// PLACEHOLDERS by Claude, from docs/design-v0_3.md section 3. Not checked against a source.
+// Mushroom garden content lists: species, habitat pieces, weather, chores, buyers.
+// Lists only. Every number (tier, price, cost, stability, weather strength) is in shared/tuning.js under the same id.
+// PLACEHOLDERS by Claude, from docs/design-v0_3.md sections 2 and 3. Not checked against a source.
 
 const like = (moisture, air, light) => ({ moisture, air, light });
 
 export const content = {
+  // The three conditions every established colony has.
+  conditions: ["moisture", "air", "light"],
+
+  // The chore that raises or lowers each condition.
+  chores: {
+    moisture: { raise: "mist", lower: "drain" },
+    air: { raise: "fan", lower: "shelter" },
+    light: { raise: "uncover", lower: "shade" },
+  },
+
+  // Weather kinds. One holds at a time.
+  weather: [
+    { id: "clear", name: "Clear" },
+    { id: "sunny", name: "Sunny" },
+    { id: "hot", name: "Hot sun" },
+    { id: "overcast", name: "Overcast" },
+    { id: "drizzle", name: "Drizzle" },
+    { id: "rain", name: "Rain" },
+    { id: "breezy", name: "Breezy" },
+    { id: "windy", name: "Windy" },
+    { id: "still", name: "Still air" },
+  ],
+
   // needs: habitat pieces that must be within reach of the colony.
   // host: a species that must have an established colony within reach.
-  // likes: preferred band of moisture / air / light. Inert until packet 02.
+  // likes: preferred band of moisture / air / light.
   species: [
     { id: "oyster", name: "Oyster", short: "Oyster", needs: ["straw_bed"], likes: like("high", "mid", "low") },
     { id: "wine_cap", name: "Wine cap", short: "WineCap", needs: ["wood_chips"], likes: like("mid", "mid", "mid") },
@@ -43,16 +66,16 @@ export const content = {
     { id: "old_oak", name: "Old oak", short: "old oak" },
   ],
 
-  // Environment pieces. Their effect on conditions arrives in packet 02.
-  // In this packet only the ones a species lists as a need can be placed, and they do nothing else.
+  // Environment pieces. All can be placed. Within reach of a colony each holds one side of one
+  // condition: "floor" stops it falling below the species' band, "cap" stops it rising above.
   environment: [
-    { id: "mister", name: "Mister", short: "mister" },
-    { id: "fan", name: "Fan", short: "fan" },
-    { id: "shade_cloth", name: "Shade cloth", short: "shade" },
-    { id: "rain_cover", name: "Rain cover", short: "cover" },
-    { id: "drainage_bed", name: "Drainage bed", short: "drain" },
-    { id: "windbreak", name: "Windbreak", short: "wind" },
-    { id: "soaking_trough", name: "Soaking trough", short: "trough" },
+    { id: "mister", name: "Mister", short: "mister", holds: { condition: "moisture", side: "floor" }, does: "keeps moisture up" },
+    { id: "fan", name: "Fan", short: "fan", holds: { condition: "air", side: "floor" }, does: "keeps air moving" },
+    { id: "shade_cloth", name: "Shade cloth", short: "shade", holds: { condition: "light", side: "cap" }, does: "keeps light down" },
+    { id: "rain_cover", name: "Rain cover", short: "cover", holds: { condition: "moisture", side: "cap" }, does: "keeps moisture down" },
+    { id: "drainage_bed", name: "Drainage bed", short: "drain", holds: { condition: "moisture", side: "cap" }, does: "keeps moisture down" },
+    { id: "windbreak", name: "Windbreak", short: "wind", holds: { condition: "air", side: "cap" }, does: "keeps air calm" },
+    { id: "soaking_trough", name: "Soaking trough", short: "trough", holds: null, does: "nothing yet" },
   ],
 
   // Fixtures. Inert until packet 03.

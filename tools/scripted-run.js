@@ -1,13 +1,17 @@
 // A scripted player that plays through the actions API only: it reads state to decide,
 // and changes the game only with engine.act() and engine.step().
-// Used by the 30-minute test, the determinism test and tools/stamp.mjs.
+// Used by the scripted tests and tools/stamp.mjs.
+// options.tuning: a tuning object to play under (default: shared/tuning.js).
+// options.tend: true makes it do chores; false or missing makes it neglect them.
 
-import { tuning } from "../shared/tuning.js";
+import { tuning as sharedTuning } from "../shared/tuning.js";
 import { content } from "../shared/content.js";
 import { createEngine } from "../src/engine/engine.js";
 import { cellCentre, buyerPosition, isNear, needsAt, mushroomStage, findById } from "../src/engine/rules.js";
+import { worstCondition } from "../src/engine/conditions.js";
 
-export function runScripted(seed, minutes) {
+export function runScripted(seed, minutes, options = {}) {
+  const tuning = options.tuning || sharedTuning;
   const engine = createEngine({ tuning, content, seed });
   const s = engine.state;
   const end = minutes * tuning.secondsPerMinute;
@@ -64,6 +68,16 @@ export function runScripted(seed, minutes) {
         return act({ type: "pick", x: cell.x, y: cell.y }).ok;
       }
     }
+    // 2b. Chores, when this player tends: fix whichever condition is furthest out.
+    if (options.tend) {
+      for (const cell of cells()) {
+        const worst = cell.colony ? worstCondition(content, tuning, cell.colony) : null;
+        if (worst) {
+          walkTo(cellCentre(cell.x, cell.y));
+          return act({ type: "tend", x: cell.x, y: cell.y, condition: worst.condition }).ok;
+        }
+      }
+    }
     // 3. Collect compost piles.
     for (const cell of cells()) {
       if (cell.colony && cell.colony.pile > 0) {
@@ -111,4 +125,17 @@ export function runScripted(seed, minutes) {
     if (!doSomething()) engine.step(1);
   }
   return { engine, acts };
+}
+
+// A copy of the shared tuning with every feature switch off: packet 01 behaviour.
+export function tuningWithFeatures(overrides) {
+  const copy = structuredClone(sharedTuning);
+  Object.assign(copy.features, overrides);
+  return copy;
+}
+
+export function allFeaturesOff() {
+  const off = {};
+  for (const name of Object.keys(sharedTuning.features)) off[name] = false;
+  return tuningWithFeatures(off);
 }

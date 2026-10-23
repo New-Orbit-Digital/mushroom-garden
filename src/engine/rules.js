@@ -24,12 +24,9 @@ export function isEdge(tuning, x, y) {
   return x < g.edge || y < g.edge || x >= g.cols - g.edge || y >= g.rows - g.edge;
 }
 
-// Pieces that can be placed now: every substrate and tree, plus any
-// environment piece that some species lists as a need.
+// Pieces that can be placed: every substrate and tree, and every environment piece.
 export function placeablePieces(content) {
-  const needed = {};
-  for (const s of content.species) for (const n of s.needs) needed[n] = true;
-  return content.substrates.concat(content.environment.filter((p) => needed[p.id]));
+  return content.substrates.concat(content.environment);
 }
 
 export function pieceName(content, id) {

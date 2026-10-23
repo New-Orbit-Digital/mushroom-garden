@@ -1,18 +1,22 @@
-// The side panel: coins, basket, spores, buyers and the build palette. Reads state, never changes it.
+// The side panel: coins, weather, basket, spores, buyers and the build palette. Reads state, never changes it.
 
 import { findById, placeablePieces, pieceName, cellCost, mushroomStage, stageShareLeft, salePrice } from "../engine/rules.js";
+import { featureOn } from "../engine/conditions.js";
 import { formatClock } from "./draw.js";
 
 export function buildPalette(el, content, tuning, onSelect) {
   el.textContent = "";
   for (const piece of placeablePieces(content)) {
     const users = content.species.filter((s) => s.needs.indexOf(piece.id) >= 0).map((s) => s.name);
+    const notes = [];
+    if (piece.does) notes.push(piece.does);
+    if (users.length) notes.push("for " + users.join(", "));
     const button = document.createElement("button");
     button.type = "button";
     button.id = "piece-" + piece.id;
     button.textContent = piece.name + " · " + tuning.pieceCost[piece.id] + " coins";
     const small = document.createElement("small");
-    small.textContent = "for " + users.join(", ");
+    small.textContent = notes.join("; ");
     button.appendChild(small);
     button.addEventListener("click", () => onSelect(piece.id));
     el.appendChild(button);
@@ -29,9 +33,18 @@ export function renderHud(els, state, content, tuning, view) {
   const ui = tuning.ui;
   const nameOf = (id) => findById(content.species, id).name;
 
-  els.stats.innerHTML =
+  let stats =
     "Coins <b>" + state.coins + "</b> &nbsp; Compost <b>" + state.compost + "</b> &nbsp; Played " +
     formatClock(tuning, state.time) + (view.paused ? " &nbsp; PAUSED" : "");
+  if (state.weather.kind) {
+    stats +=
+      "<br>Weather <b>" + findById(content.weather, state.weather.kind).name + "</b>, then " +
+      findById(content.weather, state.weather.next).name + " in " + formatClock(tuning, state.weather.left);
+  }
+  if (featureOn(tuning, "conditions")) {
+    stats += "<br><span class=\"note\">Colony bars, top to bottom: moisture, air, light. Green is the band it likes.</span>";
+  }
+  els.stats.innerHTML = stats;
 
   if (view.build) {
     els.hint.textContent =
@@ -67,9 +80,11 @@ export function renderHud(els, state, content, tuning, view) {
     const needs = species.needs.map((n) => pieceName(content, n));
     if (species.host) needs.push("an established " + nameOf(species.host) + " colony");
     const chosen = species.id === view.selectedSpore;
+    const likes = species.likes.moisture + " moisture, " + species.likes.air + " air, " + species.likes.light + " light";
     html +=
       "<div class=\"row\"><span class=\"name" + (chosen ? " sel" : "") + "\">" + (chosen ? "▶ " : "") +
-      species.name + " ×" + count + "</span><span class=\"note\">needs " + needs.join(" + ") + " beside it</span></div>";
+      species.name + " ×" + count + "</span><span class=\"note\">needs " + needs.join(" + ") + " beside it; likes " +
+      likes + "</span></div>";
   }
   els.spores.innerHTML = html || "<div class=\"note\">None yet. Forage a wild mushroom to get one.</div>";
 

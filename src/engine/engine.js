@@ -3,10 +3,13 @@
 // through act(action). The same seed and the same calls give the same state.
 
 import { seedToRngState, nextRandom, randomInt, weightedIndex } from "./rng.js";
-import { conditionQualityBonus } from "./conditions.js";
 import {
-  cellKey, cellCentre, findById, inGrid, isEdge, placeablePieces, pieceName, cellCost, canBuyCell,
-  freshSeconds, mushroomStage, needsAt, wildEligible, buyerPosition, isNear, salePrice, sporePrice,
+  featureOn, bandFor, bandMiddle, newColonyConditions, resetGrowTracking,
+  updateColonyConditions, worstCondition, isInBand, conditionActive, conditionQualityBonus,
+} from "./conditions.js";
+import {
+  cellKey, cellCentre, findById, inGrid, placeablePieces, pieceName, cellCost, canBuyCell,
+  mushroomStage, needsAt, wildEligible, buyerPosition, isNear, salePrice, sporePrice, isEdge,
 } from "./rules.js";
 
 export function createEngine(options) {
@@ -29,11 +32,18 @@ export function createEngine(options) {
     cellsBought: 0,
     pieceCounts: {}, // piece id -> how many are placed
     wild: {}, // species id -> { x, y, present, regrowLeft }
+    // Weather has its own random stream, so switching it on or off never changes any other roll.
+    weather: {
+      rngState: (seedToRngState(seed, tuning.rng) + tuning.rng.weatherSalt) % tuning.rng.modulus,
+      kind: null, // current weather id, or null when weather is switched off
+      next: null, // the weather that comes after
+      left: 0, // seconds until it changes
+    },
     buyers: [],
     nextBuyerId: 1,
     timers: { creek: tuning.creek.firstMinutes * spm, road: tuning.land.firstMinutes * spm },
     known: {}, // species the player has held at least once
-    stats: { foraged: {}, coloniesStarted: 0, picked: 0, sold: 0, sporesSold: 0, earned: 0 },
+    stats: { foraged: {}, coloniesStarted: 0, picked: 0, starsPicked: 0, chores: 0, sold: 0, sporesSold: 0, earned: 0 },
     events: [], // recent messages: { time, text }
   };
 
@@ -56,9 +66,33 @@ export function createEngine(options) {
     while (state.events.length > tuning.eventLogSize) state.events.shift();
   }
 
+  // ---------- weather ----------
+
+  function rollWeather() {
+    const weights = content.weather.map((w) => tuning.weather.kinds[w.id].weight);
+    return content.weather[weightedIndex(state.weather, tuning.rng, weights)].id;
+  }
+
+  if (featureOn(tuning, "weather")) {
+    state.weather.kind = rollWeather();
+    state.weather.next = rollWeather();
+    state.weather.left = tuning.weather.changeMinutes * spm;
+  }
+
+  function updateWeather(dt) {
+    const w = state.weather;
+    if (!w.kind) return;
+    w.left -= dt;
+    if (w.left > 0) return;
+    w.kind = w.next;
+    w.next = rollWeather();
+    w.left += tuning.weather.changeMinutes * spm;
+    log("The weather turns: " + findById(content.weather, w.kind).name + ".");
+  }
+
   // ---------- quality ----------
 
-  // colony is null for a wild mushroom. Luck, plus compost, plus conditions (packet 02).
+  // colony is null for a wild mushroom. Luck, plus compost, plus how the grow's conditions went.
   function rollQuality(colony) {
     let stars = tuning.minQuality + weightedIndex(state, tuning.rng, tuning.qualityWeights);
     if (colony && colony.composted) stars += tuning.compostQualityBonus;
@@ -80,6 +114,7 @@ export function createEngine(options) {
   function tick(dt) {
     state.time += dt;
     movePlayer(dt);
+    updateWeather(dt);
     updateWild(dt);
     updateColonies(dt);
     ageBasket(dt);
@@ -152,10 +187,12 @@ export function createEngine(options) {
 
   function updateColonies(dt) {
     for (const key of Object.keys(state.cells)) {
-      const c = state.cells[key].colony;
+      const cell = state.cells[key];
+      const c = cell.colony;
       if (!c) continue;
       const tier = tierOf(c.species);
       const rate = c.stage === "fruiting" ? tuning.fruitingGrowRate : 1;
+      updateColonyConditions(state, content, tuning, cell, dt);
       if (c.stage === "fruiting") {
         c.fruitLeft -= dt;
         if (c.fruitLeft <= 0) {
@@ -177,6 +214,7 @@ export function createEngine(options) {
           c.grow = 0;
           c.ready = { quality: rollQuality(c), waitLeft: tuning.unpickedMinutes * spm };
           c.composted = false; // compost lasts one grow
+          resetGrowTracking(c);
         }
       }
     }
@@ -224,7 +262,7 @@ export function createEngine(options) {
     const kind = kinds[randInt(0, kinds.length - 1)];
     const wants = rollWants();
     const cfg = route === "creek" ? tuning.creek : tuning.land;
-    const walk = route === "creek" ? 0 : tuning.land.walkMinutes * (1 + 1);
+    const walk = route === "creek" ? 0 : tuning.land.walkMinutes * 2;
     const buyer = {
       id: state.nextBuyerId,
       kind: kind.id,
@@ -237,7 +275,6 @@ export function createEngine(options) {
     state.nextBuyerId += 1;
     state.buyers.push(buyer);
     log("A " + kind.name + (route === "creek" ? " is drifting down the creek." : " is walking in along the road."));
-    return buyer;
   }
 
   function updateBuyers(dt) {
@@ -245,7 +282,7 @@ export function createEngine(options) {
       const cfg = route === "creek" ? tuning.creek : tuning.land;
       state.timers[route] -= dt;
       if (state.timers[route] <= 0) {
-        const jitter = cfg.jitterMinutes * (rand() * (1 + 1) - 1);
+        const jitter = cfg.jitterMinutes * (rand() * 2 - 1);
         state.timers[route] = (cfg.everyMinutes + jitter) * spm;
         if (!state.buyers.some((b) => b.route === route)) spawnBuyer(route);
       }
@@ -304,7 +341,7 @@ export function createEngine(options) {
     if (!needs.ok) return refuse(speciesName(a.species) + " needs " + needs.missing.join(" and ") + " next to it");
     if (!isNear(state, tuning, cellCentre(a.x, a.y))) return refuse("too far away");
     state.spores[a.species] -= 1;
-    cell.colony = {
+    cell.colony = Object.assign({
       species: a.species,
       stage: "fruiting",
       fruitLeft: tierOf(a.species).waitMinutes * spm,
@@ -312,7 +349,7 @@ export function createEngine(options) {
       ready: null, // { quality, waitLeft }
       pile: 0, // compost piles waiting to be collected
       composted: false,
-    };
+    }, newColonyConditions(content, tuning, a.species)); // moisture, air, light, and this grow's time in band
     state.stats.coloniesStarted += 1;
     log("Started a " + speciesName(a.species) + " colony.");
     return { ok: true };
@@ -332,6 +369,7 @@ export function createEngine(options) {
     state.basket.push({ species: c.species, quality, age: 0 });
     state.known[c.species] = true;
     state.stats.picked += 1;
+    state.stats.starsPicked += quality;
     c.ready = null;
     return { ok: true, quality };
   }
@@ -355,6 +393,27 @@ export function createEngine(options) {
     state.compost -= 1;
     c.composted = true;
     return { ok: true };
+  }
+
+  // A chore: put one condition of an established colony back in the middle of its band.
+  // Without a.condition it fixes whichever is furthest out.
+  function actTend(a) {
+    const c = colonyAt(a);
+    if (!c) return refuse("no colony there");
+    if (!featureOn(tuning, "conditions")) return refuse("colonies need no tending");
+    if (c.stage !== "established") return refuse("a fruiting colony needs no tending");
+    const worst = worstCondition(content, tuning, c);
+    const condition = a.condition || (worst ? worst.condition : null);
+    if (!condition || content.conditions.indexOf(condition) < 0) return refuse("that colony is fine as it is");
+    if (!conditionActive(tuning, condition) || isInBand(content, tuning, c, condition)) {
+      return refuse("its " + condition + " is fine as it is");
+    }
+    if (!isNear(state, tuning, cellCentre(a.x, a.y))) return refuse("too far away");
+    const band = bandFor(content, tuning, c.species, condition);
+    const chore = content.chores[condition][c[condition] < band.low ? "raise" : "lower"];
+    c[condition] = bandMiddle(band);
+    state.stats.chores += 1;
+    return { ok: true, condition, chore };
   }
 
   function actSell(a) {
@@ -447,6 +506,7 @@ export function createEngine(options) {
     pick: actPick,
     collectCompost: actCollectCompost,
     applyCompost: actApplyCompost,
+    tend: actTend,
     sell: actSell,
     buyCell: actBuyCell,
     placePiece: actPlacePiece,
@@ -459,5 +519,5 @@ export function createEngine(options) {
     return handler(action);
   }
 
-  return { state, step, act, spawnBuyer };
+  return { state, step, act };
 }
