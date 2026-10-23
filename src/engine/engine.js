@@ -10,7 +10,7 @@ import {
 import {
   cellKey, findById, inGrid, placeablePieces, pieceName, cellCost, canBuyCell,
   mushroomStage, needsAt, appearEligible, visitEligible, salePrice, sporePrice, isEdge,
-  LADDER, spreadPlan, aOrAn,
+  LADDER, spreadPlan, aOrAn, rankFromXp, titleFor, releasesAt, pieceReleased, routeReleased, cellCap,
 } from "./rules.js";
 
 export function createEngine(options) {
@@ -45,7 +45,8 @@ export function createEngine(options) {
     known: {}, // species the player has held at least once
     ladder: {}, // species id -> the highest ladder step reached: appear, visit, resident or spread
     awards: {}, // award id -> the time (seconds played) it was earned; each is earned once
-    xp: 0, // experience from awards, for the rank clock (packet 04)
+    xp: 0, // experience from awards; it fills the rank clock
+    rank: 1, // the rank the experience has reached
     stats: { foraged: {}, coloniesStarted: 0, spreads: 0, picked: 0, starsPicked: 0, chores: 0, sold: 0, sporesSold: 0, earned: 0 },
     events: [], // recent messages: { time, text }
   };
@@ -78,6 +79,12 @@ export function createEngine(options) {
     state.awards[id] = state.time;
     state.xp += xp;
     log("Journal: " + text + " (+" + xp + " xp).");
+    const reached = rankFromXp(tuning, state.xp);
+    while (state.rank < reached) {
+      state.rank += 1;
+      const releases = releasesAt(content, tuning, state.rank);
+      log("Rank " + state.rank + ", " + titleFor(content, tuning, state.rank) + "." + (releases.length ? " New: " + releases.join(", ") + "." : ""));
+    }
     return true;
   }
 
@@ -176,7 +183,7 @@ export function createEngine(options) {
       const id = species.id;
       let w = state.wild[id];
       if (!w) {
-        if (!appearEligible(state, content, id)) continue;
+        if (!appearEligible(state, content, tuning, id)) continue;
         const spot = freeEdgeCell();
         w = { x: spot.x, y: spot.y, present: false, outline: true, regrowLeft: 0 };
         state.wild[id] = w;
@@ -309,6 +316,7 @@ export function createEngine(options) {
 
   function updateBuyers(dt) {
     for (const route of ["creek", "road"]) {
+      if (!routeReleased(state, tuning, route)) continue; // its first visit is timed from the rank that opens it
       const cfg = route === "creek" ? tuning.creek : tuning.land;
       state.timers[route] -= dt;
       if (state.timers[route] <= 0) {
@@ -509,6 +517,10 @@ export function createEngine(options) {
   function actBuyCell(a) {
     const why = canBuyCell(state, tuning, a.x, a.y);
     if (why) return refuse(why);
+    const cap = cellCap(state, tuning);
+    if (Object.keys(state.cells).length >= cap.cells) {
+      return refuse(cap.nextRank === null ? "the garden is as big as it gets" : "the garden can't grow past " + cap.cells + " cells until rank " + cap.nextRank);
+    }
     const cost = cellCost(tuning, state.cellsBought);
     if (state.coins < cost) return refuse("a new cell costs " + cost + " coins");
     state.coins -= cost;
@@ -519,6 +531,7 @@ export function createEngine(options) {
 
   function actPlacePiece(a) {
     if (!findById(placeablePieces(content), a.piece)) return refuse("that piece cannot be placed yet");
+    if (!pieceReleased(state, tuning, a.piece)) return refuse(pieceName(content, a.piece) + " opens at rank " + tuning.pieceRank[a.piece]);
     if (!inGrid(tuning, a.x, a.y)) return refuse("outside the garden");
     const cell = state.cells[cellKey(a.x, a.y)];
     if (!cell) return refuse("that cell is not yours");

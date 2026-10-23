@@ -1,8 +1,8 @@
 // The side panel: coins, weather, basket, spores, buyers, the journal and the build palette. Reads state, never changes it.
 
-import { findById, placeablePieces, pieceName, cellCost, mushroomStage, stageShareLeft, salePrice } from "../engine/rules.js";
+import { findById, placeablePieces, pieceName, cellCost, mushroomStage, stageShareLeft, salePrice, titleFor, pieceReleased } from "../engine/rules.js";
 import { featureOn } from "../engine/conditions.js";
-import { journal } from "../engine/query.js";
+import { journal, nextRelease, rankProgress } from "../engine/query.js";
 import { formatClock } from "./draw.js";
 
 export function buildPalette(el, content, tuning, onSelect) {
@@ -39,9 +39,18 @@ export function renderHud(els, state, content, tuning, view) {
   const ui = tuning.ui;
   const nameOf = (id) => findById(content.species, id).name;
 
+  const progress = rankProgress(state, tuning);
+  const share = Math.min(ui.percent, Math.round((progress.into / progress.need) * ui.percent));
   let stats =
+    "Rank <b>" + state.rank + "</b> " + titleFor(content, tuning, state.rank) +
+    " <span class=\"bar xp\" title=\"" + progress.into + " of " + progress.need + " xp\"><i style=\"width:" + share + "%\"></i></span> " +
+    progress.into + "/" + progress.need + " xp<br>" +
     "Coins <b>" + state.coins + "</b> &nbsp; Compost <b>" + state.compost + "</b> &nbsp; Played " +
     formatClock(tuning, state.time) + (view.paused ? " &nbsp; PAUSED" : "");
+  const coming = nextRelease(state, content, tuning);
+  if (featureOn(tuning, "ranks") && coming) {
+    stats += "<br><span class=\"note\">Rank " + coming.rank + " brings: " + coming.items.join(", ") + ".</span>";
+  }
   if (state.weather.kind) {
     stats +=
       "<br>Weather <b>" + findById(content.weather, state.weather.kind).name + "</b>, then " +
@@ -51,6 +60,15 @@ export function renderHud(els, state, content, tuning, view) {
     stats += "<br><span class=\"note\">Colony bars, top to bottom: moisture, air, light. Green is the band it likes.</span>";
   }
   els.stats.innerHTML = stats;
+
+  // Build palette: pieces not yet released show the rank that opens them.
+  for (const piece of placeablePieces(content)) {
+    const button = document.getElementById("piece-" + piece.id);
+    if (!button) continue;
+    const open = pieceReleased(state, tuning, piece.id);
+    button.classList.toggle("locked", !open);
+    button.dataset.lock = open ? "" : "opens at rank " + tuning.pieceRank[piece.id];
+  }
 
   if (view.build) {
     els.hint.textContent =
