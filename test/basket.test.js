@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { tuning, SPM, newGame, standAt } from "../tools/testkit.js";
+import { tuning, SPM, newGame } from "../tools/testkit.js";
 import { freshSeconds, mushroomStage } from "../src/engine/rules.js";
 
 test("fresh time follows freshBase x (freshFloor + freshStabScale x stab)", () => {
@@ -39,7 +39,6 @@ test("a full basket refuses more, and nothing is lost by the refusal", () => {
   e.step(1);
   for (let i = 0; i < tuning.basketSize; i += 1) s.basket.push({ species: "oyster", quality: 3, age: 0 });
   const w = s.wild.oyster;
-  standAt(e, w.x + 0.5, w.y + 0.5);
   const result = e.act({ type: "forage", species: "oyster" });
   assert.equal(result.ok, false);
   assert.match(result.reason, /full/);

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { tuning, content, SPM, standAt } from "../tools/testkit.js";
+import { tuning, content, SPM } from "../tools/testkit.js";
 import { createEngine } from "../src/engine/engine.js";
 import { bandFor, bandMiddle } from "../src/engine/conditions.js";
 import { runScripted, tuningWithFeatures, allFeaturesOff } from "../tools/scripted-run.js";
@@ -24,7 +24,6 @@ function game(features = {}, seed = 1) {
 
 function startOyster(e, cell) {
   e.state.spores.oyster = (e.state.spores.oyster || 0) + 1;
-  standAt(e, cell.x + 0.5, cell.y + 0.5);
   assert.equal(e.act({ type: "startColony", species: "oyster", ...cell }).ok, true);
   return e.state.cells[cell.x + "," + cell.y].colony;
 }
@@ -102,7 +101,7 @@ test("a fruiting colony does not drift and cannot be tended", () => {
   assert.match(e.act({ type: "tend", ...LEFT, condition: "moisture" }).reason, /fruiting/);
 });
 
-test("a chore puts the condition at the middle of the band; refused out of reach or when in band", () => {
+test("a chore puts the condition at the middle of the band; refused when in band", () => {
   const { e } = game();
   const colony = establishedOyster(e);
   holdWeather(e, "hot");
@@ -110,9 +109,6 @@ test("a chore puts the condition at the middle of the band; refused out of reach
   const band = bandFor(content, tuning, "oyster", "moisture");
   assert.ok(colony.moisture < band.low, "hot sun has dried it out of band");
 
-  standAt(e, 1, 1);
-  assert.match(e.act({ type: "tend", ...LEFT, condition: "moisture" }).reason, /too far/);
-  standAt(e, LEFT.x + 0.5, LEFT.y + 0.5);
   const misted = e.act({ type: "tend", ...LEFT, condition: "moisture" });
   assert.equal(misted.ok, true);
   assert.equal(misted.chore, "mist");
@@ -217,7 +213,6 @@ test("switch: conditions off means no drift and no chores, even in hot sun", () 
   holdWeather(e, "hot");
   e.step(30 * SPM);
   assert.deepEqual(levels(colony), CONDITIONS.map(middle));
-  standAt(e, LEFT.x + 0.5, LEFT.y + 0.5);
   assert.equal(e.act({ type: "tend", ...LEFT, condition: "moisture" }).ok, false);
 });
 
@@ -233,11 +228,13 @@ for (const frozen of CONDITIONS) {
   });
 }
 
-test("with every switch off, the seed 1 scripted run matches the packet 01 stamp", () => {
+// The packet 01 baseline (323 coins) depended on walking, which packet 03 removed.
+// This is packet 03's baseline: a change to the core loop should change it on purpose.
+test("with every switch off, the seed 1 scripted run matches the packet 03 baseline", () => {
   const s = runScripted(1, 30, { tuning: allFeaturesOff() }).engine.state;
-  assert.equal(s.coins, 323);
-  assert.equal(Object.keys(s.stats.foraged).length, 3);
-  assert.equal(s.stats.coloniesStarted, 4);
+  assert.equal(s.coins, 137);
+  assert.equal(Object.keys(s.stats.foraged).length, 2);
+  assert.equal(s.stats.coloniesStarted, 9);
   assert.equal(s.stats.chores, 0);
 });
 

@@ -1,13 +1,14 @@
-// Wires the page together: keyboard and mouse in, engine actions out, a frame loop that
+// Wires the page together: mouse and keyboard in, engine actions out, a frame loop that
 // steps the engine and redraws. The screen changes the game only through engine.act().
+// Cursor only: there is no character. Hovering shows what a click would do; a click does it.
 
 import { tuning } from "../../shared/tuning.js";
 import { content } from "../../shared/content.js";
 import { createEngine } from "../engine/engine.js";
 import { placeablePieces } from "../engine/rules.js";
-import { suggestAction, nearestCompostable, nearestBuyer } from "../engine/query.js";
-import { canvasSize, cellFromPixel, drawWorld } from "./draw.js";
-import { buildPalette, markPalette, renderHud } from "./hud.js";
+import { actionAt, buyerAt, cellAt } from "../engine/query.js";
+import { canvasSize, pointFromPixel, drawWorld } from "./draw.js";
+import { buildPalette, markPalette, renderHud, sentence } from "./hud.js";
 
 const ui = tuning.ui;
 const seedText = new URLSearchParams(window.location.search).get("seed");
@@ -28,6 +29,8 @@ const els = {
   basketTitle: document.getElementById("basket-title"),
   spores: document.getElementById("spores"),
   buyers: document.getElementById("buyers"),
+  journal: document.getElementById("journal"),
+  journalTitle: document.getElementById("journal-title"),
   build: document.getElementById("build"),
   palette: document.getElementById("palette"),
 };
@@ -35,8 +38,9 @@ const els = {
 const view = {
   build: false,
   paused: false,
-  hover: null,
-  hint: null,
+  point: null, // where the cursor is, in cells (fractions allowed); null when off the garden
+  hover: null, // the whole cell under the cursor
+  hint: null, // what a click would do now: { action, label } or null
   selectedPiece: placeablePieces(content)[0].id,
   selectedSpore: null,
   message: "",
@@ -73,50 +77,24 @@ function nextSpore() {
 
 // ---------- keyboard ----------
 
-const moveKeys = {
-  w: { x: 0, y: -1 }, arrowup: { x: 0, y: -1 },
-  s: { x: 0, y: 1 }, arrowdown: { x: 0, y: 1 },
-  a: { x: -1, y: 0 }, arrowleft: { x: -1, y: 0 },
-  d: { x: 1, y: 0 }, arrowright: { x: 1, y: 0 },
-};
-const held = {};
-
-function sendMove() {
-  const dir = { x: 0, y: 0 };
-  if (!view.build) {
-    for (const key of Object.keys(held)) {
-      if (!held[key]) continue;
-      dir.x += moveKeys[key].x;
-      dir.y += moveKeys[key].y;
-    }
-  }
-  engine.act({ type: "move", dir });
-}
-
 function setBuild(on) {
   view.build = on;
-  view.hover = null;
   els.build.hidden = !on;
   canvas.classList.toggle("build", on);
-  sendMove();
 }
 
 const commands = {
-  e() {
-    if (view.build || !view.hint) return;
-    attempt(view.hint.action);
-  },
   q() {
     nextSpore();
   },
   c() {
-    const cell = nearestCompostable(state, tuning);
-    if (!cell) say("Stand next to a colony to compost it.");
+    const cell = view.point ? cellAt(state, view.point) : null;
+    if (!cell || !cell.colony) say("Point at a colony and press C to compost it.");
     else attempt({ type: "applyCompost", x: cell.x, y: cell.y });
   },
   r() {
-    const buyer = nearestBuyer(state, tuning);
-    if (!buyer) say("Stand next to a buyer to sell spores.");
+    const buyer = view.point ? buyerAt(state, tuning, view.point) : null;
+    if (!buyer) say("Point at a buyer and press R to sell spare spores.");
     else attempt({ type: "sell", buyer: buyer.id, what: "spores" });
   },
   b() {
@@ -130,52 +108,43 @@ const commands = {
 window.addEventListener("keydown", (event) => {
   if (event.ctrlKey || event.metaKey || event.altKey) return;
   const key = event.key.toLowerCase();
-  if (moveKeys[key]) {
-    held[key] = true;
-    sendMove();
-    event.preventDefault();
-    return;
-  }
   if (event.repeat || !commands[key]) return;
   commands[key]();
   event.preventDefault();
 });
 
-window.addEventListener("keyup", (event) => {
-  const key = event.key.toLowerCase();
-  if (!moveKeys[key]) return;
-  held[key] = false;
-  sendMove();
-});
+// ---------- mouse ----------
 
-window.addEventListener("blur", () => {
-  for (const key of Object.keys(held)) held[key] = false;
-  sendMove();
-});
-
-// ---------- mouse (build mode only) ----------
-
-function cellUnderMouse(event) {
+function pointUnderMouse(event) {
   const box = canvas.getBoundingClientRect();
   const px = ((event.clientX - box.left) * canvas.width) / box.width;
   const py = ((event.clientY - box.top) * canvas.height) / box.height;
-  return cellFromPixel(tuning, px, py);
+  return pointFromPixel(tuning, px, py);
 }
 
 canvas.addEventListener("mousemove", (event) => {
-  view.hover = view.build ? cellUnderMouse(event) : null;
+  view.point = pointUnderMouse(event);
+  view.hover = { x: Math.floor(view.point.x), y: Math.floor(view.point.y) };
 });
 
 canvas.addEventListener("mouseleave", () => {
+  view.point = null;
   view.hover = null;
 });
 
 canvas.addEventListener("click", (event) => {
-  if (!view.build) return;
-  const cell = cellUnderMouse(event);
-  const owned = state.cells[cell.x + "," + cell.y];
-  if (owned) attempt({ type: "placePiece", piece: view.selectedPiece, x: cell.x, y: cell.y });
-  else attempt({ type: "buyCell", x: cell.x, y: cell.y });
+  view.point = pointUnderMouse(event);
+  view.hover = { x: Math.floor(view.point.x), y: Math.floor(view.point.y) };
+  const cell = view.hover;
+  if (view.build) {
+    const owned = state.cells[cell.x + "," + cell.y];
+    if (owned) attempt({ type: "placePiece", piece: view.selectedPiece, x: cell.x, y: cell.y });
+    else attempt({ type: "buyCell", x: cell.x, y: cell.y });
+    return;
+  }
+  const hint = actionAt(state, content, tuning, view.point, view.selectedSpore);
+  if (hint && hint.action) attempt(hint.action);
+  else if (hint) say(sentence(hint.label));
 });
 
 buildPalette(els.palette, content, tuning, (id) => {
@@ -208,7 +177,7 @@ function frame(stamp) {
   }
 
   keepSporeChoiceValid();
-  view.hint = view.build ? null : suggestAction(state, content, tuning, view.selectedSpore);
+  view.hint = view.build || !view.point ? null : actionAt(state, content, tuning, view.point, view.selectedSpore);
   drawWorld(ctx, state, content, tuning, view);
   hudLeft -= dt;
   if (hudLeft <= 0) {

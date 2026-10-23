@@ -1,6 +1,6 @@
 // Canvas drawing. Flat placeholder shapes with text labels. Reads state, never changes it.
 
-import { cellKey, cellCentre, findById, isEdge, canBuyCell, buyerPosition } from "../engine/rules.js";
+import { cellKey, cellCentre, findById, isEdge, inGrid, canBuyCell, buyerPosition } from "../engine/rules.js";
 import { featureOn, bandFor, isInBand } from "../engine/conditions.js";
 
 export function canvasSize(tuning) {
@@ -9,10 +9,11 @@ export function canvasSize(tuning) {
   return { width: g.cols * c, height: (g.rows + g.stripRows * 2) * c };
 }
 
-// Canvas pixel to grid cell. The creek strip sits above row 0.
-export function cellFromPixel(tuning, px, py) {
+// Canvas pixel to a point in cells (fractions kept). The creek strip sits above row 0,
+// so a point on the creek has y below 0 and a point on the road has y at or past the last row.
+export function pointFromPixel(tuning, px, py) {
   const c = tuning.ui.cellPx;
-  return { x: Math.floor(px / c), y: Math.floor(py / c) - tuning.grid.stripRows };
+  return { x: px / c, y: py / c - tuning.grid.stripRows };
 }
 
 export function formatClock(tuning, seconds) {
@@ -121,6 +122,7 @@ export function drawWorld(ctx, state, content, tuning, view) {
         ctx.setLineDash(colony.stage === "fruiting" ? ui.wildDash : []);
         ctx.stroke();
         ctx.setLineDash([]);
+        if (colony.restLeft > 0 && !colony.ready) status = "resting " + formatClock(tuning, colony.restLeft);
         const lines = [species.short, status + (colony.composted ? " +c" : "")];
         const tended = colony.stage === "established" && featureOn(tuning, "conditions");
         const lift = tended ? ui.condBars.labelLift * c : 0;
@@ -136,20 +138,25 @@ export function drawWorld(ctx, state, content, tuning, view) {
     }
   }
 
-  // Wild mushrooms: a heavier dashed outline.
+  // Wild mushrooms: a flush has a heavier dashed outline; an outline (appeared, not yet ready) is faint.
   for (const id of Object.keys(state.wild)) {
     const w = state.wild[id];
-    if (!w.present) continue;
+    if (!w.present && !w.outline) continue;
     const mid = cellCentre(w.x, w.y);
+    if (w.outline) ctx.globalAlpha = ui.outlineAlpha;
     fullCircle(ctx, sx(mid.x), sy(mid.y), ui.wildRadius * c);
-    ctx.fillStyle = col.wild;
-    ctx.fill();
+    if (w.present) {
+      ctx.fillStyle = col.wild;
+      ctx.fill();
+    }
     ctx.lineWidth = ui.wildLineWidth;
     ctx.strokeStyle = col.outline;
     ctx.setLineDash(ui.wildDash);
     ctx.stroke();
     ctx.setLineDash([]);
-    drawLabel(ctx, tuning, ["wild", findById(content.species, id).short], sx(mid.x), sy(mid.y), col.outline, ui.smallPx);
+    const top = w.present ? "wild" : "soon";
+    drawLabel(ctx, tuning, [top, findById(content.species, id).short], sx(mid.x), sy(mid.y), w.present ? col.outline : col.lightText, ui.smallPx);
+    ctx.globalAlpha = 1;
   }
 
   // Buyers: a diamond with the name and time left beside it.
@@ -173,20 +180,10 @@ export function drawWorld(ctx, state, content, tuning, view) {
     ctx.textAlign = "center";
   }
 
-  // The character, with a faint ring showing how far it can reach. Hidden in build mode.
-  if (!view.build) {
-    const px = sx(state.player.x);
-    const py = sy(state.player.y);
-    ctx.globalAlpha = ui.reachAlpha;
-    fullCircle(ctx, px, py, tuning.actReach * c);
-    ctx.fillStyle = col.player;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    fullCircle(ctx, px, py, ui.playerRadius * c);
-    ctx.fillStyle = col.player;
-    ctx.fill();
-    ctx.lineWidth = ui.lineWidth;
-    ctx.strokeStyle = col.lightText;
-    ctx.stroke();
+  // A frame round the cell under the cursor, outside build mode (build mode fills it instead).
+  if (!view.build && view.hover && inGrid(tuning, view.hover.x, view.hover.y)) {
+    ctx.lineWidth = ui.hoverLineWidth;
+    ctx.strokeStyle = view.hint && view.hint.action ? col.target : col.outline;
+    ctx.strokeRect(sx(view.hover.x) + ui.cellGap, sy(view.hover.y) + ui.cellGap, c - ui.cellGap * 2, c - ui.cellGap * 2);
   }
 }

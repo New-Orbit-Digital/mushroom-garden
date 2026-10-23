@@ -8,8 +8,9 @@ import {
   updateColonyConditions, worstCondition, isInBand, conditionActive, conditionQualityBonus,
 } from "./conditions.js";
 import {
-  cellKey, cellCentre, findById, inGrid, placeablePieces, pieceName, cellCost, canBuyCell,
-  mushroomStage, needsAt, wildEligible, buyerPosition, isNear, salePrice, sporePrice, isEdge,
+  cellKey, findById, inGrid, placeablePieces, pieceName, cellCost, canBuyCell,
+  mushroomStage, needsAt, appearEligible, visitEligible, salePrice, sporePrice, isEdge,
+  LADDER, spreadPlan, aOrAn,
 } from "./rules.js";
 
 export function createEngine(options) {
@@ -27,11 +28,10 @@ export function createEngine(options) {
     compost: 0,
     spores: {}, // species id -> count
     basket: [], // { species, quality, age (seconds) }
-    player: { x: tuning.playerStart.x, y: tuning.playerStart.y, dirX: 0, dirY: 0, target: null },
     cells: {}, // owned cells only: key -> { x, y, piece, colony }
     cellsBought: 0,
     pieceCounts: {}, // piece id -> how many are placed
-    wild: {}, // species id -> { x, y, present, regrowLeft }
+    wild: {}, // species id -> { x, y, present (a flush to forage), outline (appeared, not ready to forage), regrowLeft }
     // Weather has its own random stream, so switching it on or off never changes any other roll.
     weather: {
       rngState: (seedToRngState(seed, tuning.rng) + tuning.rng.weatherSalt) % tuning.rng.modulus,
@@ -43,7 +43,10 @@ export function createEngine(options) {
     nextBuyerId: 1,
     timers: { creek: tuning.creek.firstMinutes * spm, road: tuning.land.firstMinutes * spm },
     known: {}, // species the player has held at least once
-    stats: { foraged: {}, coloniesStarted: 0, picked: 0, starsPicked: 0, chores: 0, sold: 0, sporesSold: 0, earned: 0 },
+    ladder: {}, // species id -> the highest ladder step reached: appear, visit, resident or spread
+    awards: {}, // award id -> the time (seconds played) it was earned; each is earned once
+    xp: 0, // experience from awards, for the rank clock (packet 04)
+    stats: { foraged: {}, coloniesStarted: 0, spreads: 0, picked: 0, starsPicked: 0, chores: 0, sold: 0, sporesSold: 0, earned: 0 },
     events: [], // recent messages: { time, text }
   };
 
@@ -64,6 +67,36 @@ export function createEngine(options) {
   function log(text) {
     state.events.push({ time: state.time, text });
     while (state.events.length > tuning.eventLogSize) state.events.shift();
+  }
+
+  // ---------- journal awards ----------
+  // Each award is earned once and adds its experience. Awards are the only source of experience.
+
+  function grant(id, kind, text) {
+    if (state.awards[id] !== undefined) return false;
+    const xp = tuning.awards.xp[kind];
+    state.awards[id] = state.time;
+    state.xp += xp;
+    log("Journal: " + text + " (+" + xp + " xp).");
+    return true;
+  }
+
+  const stepText = {
+    appear: (name) => name + " appeared at the edge",
+    visit: (name) => "first " + name + " foraged",
+    resident: (name) => "first " + name + " colony established",
+    spread: (name) => name + " spread for the first time",
+  };
+
+  // Reaching a step also grants any earlier step not yet earned, so the ladder has no gaps.
+  function reachStep(speciesId, step) {
+    const target = LADDER.indexOf(step);
+    for (let i = 0; i <= target; i += 1) {
+      const s = LADDER[i];
+      grant(s + ":" + speciesId, s, stepText[s](speciesName(speciesId)));
+    }
+    const current = state.ladder[speciesId] ? LADDER.indexOf(state.ladder[speciesId]) : -1;
+    if (target > current) state.ladder[speciesId] = step;
   }
 
   // ---------- weather ----------
@@ -113,39 +146,11 @@ export function createEngine(options) {
 
   function tick(dt) {
     state.time += dt;
-    movePlayer(dt);
     updateWeather(dt);
     updateWild(dt);
     updateColonies(dt);
     ageBasket(dt);
     updateBuyers(dt);
-  }
-
-  function clampToGarden(p) {
-    p.x = Math.max(0, Math.min(g.cols, p.x));
-    p.y = Math.max(0, Math.min(g.rows, p.y));
-  }
-
-  function movePlayer(dt) {
-    const p = state.player;
-    const stride = tuning.walkSpeed * dt;
-    if (p.target) {
-      const dx = p.target.x - p.x;
-      const dy = p.target.y - p.y;
-      const d = Math.hypot(dx, dy);
-      if (d <= Math.max(stride, tuning.arriveDistance)) {
-        p.x = p.target.x;
-        p.y = p.target.y;
-        p.target = null;
-      } else {
-        p.x += (dx / d) * stride;
-        p.y += (dy / d) * stride;
-      }
-    } else {
-      p.x += p.dirX * stride;
-      p.y += p.dirY * stride;
-    }
-    clampToGarden(p);
   }
 
   function freeEdgeCell() {
@@ -156,7 +161,7 @@ export function createEngine(options) {
         let taken = false;
         for (const id of Object.keys(state.wild)) {
           const w = state.wild[id];
-          if (w.present && w.x === x && w.y === y) taken = true;
+          if ((w.present || w.outline) && w.x === x && w.y === y) taken = true;
         }
         if (!taken) free.push({ x, y });
       }
@@ -164,23 +169,33 @@ export function createEngine(options) {
     return free[randInt(0, free.length - 1)];
   }
 
+  // Appear: an outline at the edge. Visit: the outline becomes a flush that can be foraged.
+  // After foraging, it regrows somewhere on the edge: a flush if Visit still holds, else an outline.
   function updateWild(dt) {
     for (const species of content.species) {
-      const w = state.wild[species.id];
+      const id = species.id;
+      let w = state.wild[id];
       if (!w) {
-        if (!wildEligible(state, content, species.id)) continue;
+        if (!appearEligible(state, content, id)) continue;
         const spot = freeEdgeCell();
-        state.wild[species.id] = { x: spot.x, y: spot.y, present: true, regrowLeft: 0 };
-        log("A wild " + species.name + " appeared at the edge.");
-      } else if (!w.present) {
+        w = { x: spot.x, y: spot.y, present: false, outline: true, regrowLeft: 0 };
+        state.wild[id] = w;
+        reachStep(id, "appear");
+      }
+      if (w.present) continue;
+      if (w.regrowLeft > 0) {
         w.regrowLeft -= dt;
-        if (w.regrowLeft <= 0) {
-          const spot = freeEdgeCell();
-          w.x = spot.x;
-          w.y = spot.y;
-          w.present = true;
-          w.regrowLeft = 0;
-        }
+        if (w.regrowLeft > 0) continue;
+        w.regrowLeft = 0;
+        const spot = freeEdgeCell();
+        w.x = spot.x;
+        w.y = spot.y;
+        w.outline = true;
+      }
+      if (w.outline && visitEligible(state, content, id)) {
+        w.outline = false;
+        w.present = true;
+        if (state.ladder[id] === "appear") log("A wild " + species.name + " is flushing at the edge.");
       }
     }
   }
@@ -193,12 +208,15 @@ export function createEngine(options) {
       const tier = tierOf(c.species);
       const rate = c.stage === "fruiting" ? tuning.fruitingGrowRate : 1;
       updateColonyConditions(state, content, tuning, cell, dt);
+      if (c.restLeft > 0) c.restLeft = Math.max(0, c.restLeft - dt);
       if (c.stage === "fruiting") {
         c.fruitLeft -= dt;
         if (c.fruitLeft <= 0) {
           c.fruitLeft = 0;
           c.stage = "established";
           log("The " + speciesName(c.species) + " colony is established.");
+          reachStep(c.species, "resident");
+          checkSeven(c.species);
         }
       }
       if (c.ready) {
@@ -217,6 +235,17 @@ export function createEngine(options) {
           resetGrowTracking(c);
         }
       }
+    }
+  }
+
+  function checkSeven(speciesId) {
+    let count = 0;
+    for (const key of Object.keys(state.cells)) {
+      const other = state.cells[key].colony;
+      if (other && other.species === speciesId && other.stage === "established") count += 1;
+    }
+    if (count >= tuning.sevenColonies) {
+      grant("seven:" + speciesId, "seven", tuning.sevenColonies + " " + speciesName(speciesId) + " colonies at once");
     }
   }
 
@@ -274,7 +303,8 @@ export function createEngine(options) {
     };
     state.nextBuyerId += 1;
     state.buyers.push(buyer);
-    log("A " + kind.name + (route === "creek" ? " is drifting down the creek." : " is walking in along the road."));
+    const who = aOrAn(kind.name);
+    log(who.charAt(0).toUpperCase() + who.slice(1) + (route === "creek" ? " is drifting down the creek." : " is walking in along the road."));
   }
 
   function updateBuyers(dt) {
@@ -293,32 +323,16 @@ export function createEngine(options) {
 
   // ---------- actions ----------
 
-  function actMove(a) {
-    const p = state.player;
-    if (a.to) {
-      p.target = { x: a.to.x, y: a.to.y };
-      clampToGarden(p.target);
-      p.dirX = 0;
-      p.dirY = 0;
-      return { ok: true };
-    }
-    const dx = a.dir ? a.dir.x : 0;
-    const dy = a.dir ? a.dir.y : 0;
-    const d = Math.hypot(dx, dy);
-    p.target = null;
-    p.dirX = d > 0 ? dx / d : 0;
-    p.dirY = d > 0 ? dy / d : 0;
-    return { ok: true };
-  }
-
   function basketFull() {
     return state.basket.length >= tuning.basketSize;
   }
 
   function actForage(a) {
     const w = state.wild[a.species];
-    if (!w || !w.present) return refuse("nothing wild to forage there");
-    if (!isNear(state, tuning, cellCentre(w.x, w.y))) return refuse("too far away");
+    if (!w || !w.present) {
+      if (w && w.outline) return refuse("the " + speciesName(a.species) + " is only an outline so far");
+      return refuse("nothing wild to forage there");
+    }
     if (basketFull()) return refuse("the basket is full");
     const quality = rollQuality(null);
     state.basket.push({ species: a.species, quality, age: 0 });
@@ -328,6 +342,7 @@ export function createEngine(options) {
     w.present = false;
     w.regrowLeft = tierOf(a.species).wildRegrowMinutes * spm;
     log("Foraged a wild " + speciesName(a.species) + ": one mushroom and one spore.");
+    reachStep(a.species, "visit");
     return { ok: true, quality };
   }
 
@@ -339,20 +354,38 @@ export function createEngine(options) {
     if (cell.piece || cell.colony) return refuse("that cell is not free");
     const needs = needsAt(state, content, tuning, a.species, a.x, a.y);
     if (!needs.ok) return refuse(speciesName(a.species) + " needs " + needs.missing.join(" and ") + " next to it");
-    if (!isNear(state, tuning, cellCentre(a.x, a.y))) return refuse("too far away");
     state.spores[a.species] -= 1;
-    cell.colony = Object.assign({
-      species: a.species,
+    cell.colony = newColony(a.species);
+    state.stats.coloniesStarted += 1;
+    log("Started " + aOrAn(speciesName(a.species)) + " colony.");
+    return { ok: true };
+  }
+
+  function newColony(speciesId) {
+    return Object.assign({
+      species: speciesId,
       stage: "fruiting",
-      fruitLeft: tierOf(a.species).waitMinutes * spm,
+      fruitLeft: tierOf(speciesId).waitMinutes * spm,
       grow: 0,
       ready: null, // { quality, waitLeft }
       pile: 0, // compost piles waiting to be collected
       composted: false,
-    }, newColonyConditions(content, tuning, a.species)); // moisture, air, light, and this grow's time in band
-    state.stats.coloniesStarted += 1;
-    log("Started a " + speciesName(a.species) + " colony.");
-    return { ok: true };
+      restLeft: 0, // seconds left resting after a Spread
+    }, newColonyConditions(content, tuning, speciesId)); // moisture, air, light, and this grow's time in band
+  }
+
+  // Spread: two established colonies of a species, side by side with its home piece, make a third.
+  function actSpread(a) {
+    const plan = spreadPlan(state, content, tuning, a.x, a.y);
+    if (!plan.ok) return refuse(plan.reason);
+    const source = state.cells[cellKey(a.x, a.y)].colony;
+    plan.target.colony = newColony(source.species);
+    source.restLeft = tuning.spreadRestMinutes * spm;
+    plan.partner.colony.restLeft = tuning.spreadRestMinutes * spm;
+    state.stats.spreads += 1;
+    log("The " + speciesName(source.species) + " colonies spread to a new cell.");
+    reachStep(source.species, "spread");
+    return { ok: true, x: plan.target.x, y: plan.target.y };
   }
 
   function colonyAt(a) {
@@ -363,7 +396,6 @@ export function createEngine(options) {
   function actPick(a) {
     const c = colonyAt(a);
     if (!c || !c.ready) return refuse("nothing ready to pick there");
-    if (!isNear(state, tuning, cellCentre(a.x, a.y))) return refuse("too far away");
     if (basketFull()) return refuse("the basket is full");
     const quality = c.ready.quality;
     state.basket.push({ species: c.species, quality, age: 0 });
@@ -371,13 +403,15 @@ export function createEngine(options) {
     state.stats.picked += 1;
     state.stats.starsPicked += quality;
     c.ready = null;
+    if (quality >= tuning.maxQuality) {
+      grant("fiveStar:" + c.species, "fiveStar", "first " + tuning.maxQuality + "-star " + speciesName(c.species));
+    }
     return { ok: true, quality };
   }
 
   function actCollectCompost(a) {
     const c = colonyAt(a);
     if (!c || c.pile <= 0) return refuse("no compost pile there");
-    if (!isNear(state, tuning, cellCentre(a.x, a.y))) return refuse("too far away");
     const amount = c.pile;
     state.compost += amount;
     c.pile = 0;
@@ -389,7 +423,6 @@ export function createEngine(options) {
     if (!c) return refuse("no colony there");
     if (state.compost <= 0) return refuse("no compost");
     if (c.composted) return refuse("that colony already has compost");
-    if (!isNear(state, tuning, cellCentre(a.x, a.y))) return refuse("too far away");
     state.compost -= 1;
     c.composted = true;
     return { ok: true };
@@ -408,7 +441,6 @@ export function createEngine(options) {
     if (!conditionActive(tuning, condition) || isInBand(content, tuning, c, condition)) {
       return refuse("its " + condition + " is fine as it is");
     }
-    if (!isNear(state, tuning, cellCentre(a.x, a.y))) return refuse("too far away");
     const band = bandFor(content, tuning, c.species, condition);
     const chore = content.chores[condition][c[condition] < band.low ? "raise" : "lower"];
     c[condition] = bandMiddle(band);
@@ -419,7 +451,6 @@ export function createEngine(options) {
   function actSell(a) {
     const buyer = state.buyers.find((b) => b.id === a.buyer);
     if (!buyer) return refuse("that buyer has gone");
-    if (!isNear(state, tuning, buyerPosition(tuning, buyer))) return refuse("too far away");
     const kind = findById(content.buyers, buyer.kind);
     let earned = 0;
     let sold = 0;
@@ -438,6 +469,7 @@ export function createEngine(options) {
       state.stats.sporesSold += sold;
       state.stats.earned += earned;
       log("Sold " + sold + " spare spores for " + earned + " coins.");
+      grant("sale:" + kind.id, "sale", "first sale to " + aOrAn(kind.name));
       return { ok: true, sold, earned };
     }
 
@@ -470,6 +502,7 @@ export function createEngine(options) {
     state.stats.sold += sold;
     state.stats.earned += earned;
     log("Sold " + sold + " to the " + kind.name + " for " + earned + " coins.");
+    grant("sale:" + kind.id, "sale", "first sale to " + aOrAn(kind.name));
     return { ok: true, sold, earned };
   }
 
@@ -500,13 +533,13 @@ export function createEngine(options) {
   }
 
   const handlers = {
-    move: actMove,
     forage: actForage,
     startColony: actStartColony,
     pick: actPick,
     collectCompost: actCollectCompost,
     applyCompost: actApplyCompost,
     tend: actTend,
+    spread: actSpread,
     sell: actSell,
     buyCell: actBuyCell,
     placePiece: actPlacePiece,

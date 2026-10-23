@@ -1,86 +1,123 @@
-// Read-only questions about the state. The screen uses these to offer the
-// E-key action; packet 04's bots can use them too. Nothing here changes state.
+// Read-only questions about the state. The screen uses these to show what a click would do
+// and to fill the journal; packet 06's bots can use them too. Nothing here changes state.
 
-import { cellCentre, findById, isNear, distance, needsAt, buyerPosition } from "./rules.js";
+import {
+  cellKey, findById, distance, needsAt, buyerPosition, pieceName, homePiece, spreadPlan,
+  visitEligible, visitMissing, LADDER, aOrAn,
+} from "./rules.js";
 import { worstCondition } from "./conditions.js";
 
-// The action the E key should do right now, or null.
-// Returns { action, label }. action can be passed straight to engine.act().
-export function suggestAction(state, content, tuning, selectedSpore) {
-  let best = null;
-  const offer = (point, action, label) => {
-    if (!isNear(state, tuning, point)) return;
-    const d = distance(state.player, point);
-    if (!best || d < best.d) best = { d, action, label };
-  };
-  const nameOf = (id) => findById(content.species, id).name;
-
-  for (const id of Object.keys(state.wild)) {
-    const w = state.wild[id];
-    if (w.present) offer(cellCentre(w.x, w.y), { type: "forage", species: id }, "forage wild " + nameOf(id));
-  }
-  for (const buyer of state.buyers) {
-    const kind = findById(content.buyers, buyer.kind);
-    offer(buyerPosition(tuning, buyer), { type: "sell", buyer: buyer.id }, "sell to the " + kind.name);
-  }
-  for (const key of Object.keys(state.cells)) {
-    const cell = state.cells[key];
-    if (!cell.colony) continue;
-    const c = cell.colony;
-    const at = cellCentre(cell.x, cell.y);
-    const worst = worstCondition(content, tuning, c);
-    if (c.ready) offer(at, { type: "pick", x: cell.x, y: cell.y }, "pick " + nameOf(c.species));
-    else if (c.pile > 0) offer(at, { type: "collectCompost", x: cell.x, y: cell.y }, "collect compost");
-    else if (worst) {
-      offer(at, { type: "tend", x: cell.x, y: cell.y, condition: worst.condition }, worst.chore + " the " + nameOf(c.species));
-    }
-  }
-  if (best) return { action: best.action, label: best.label };
-
-  // Nothing to gather, tend or sell nearby: offer to start a colony on a free cell.
-  if (!selectedSpore || !(state.spores[selectedSpore] > 0)) return null;
-  let fit = null;
-  let any = null;
-  for (const key of Object.keys(state.cells)) {
-    const cell = state.cells[key];
-    if (cell.piece || cell.colony) continue;
-    const point = cellCentre(cell.x, cell.y);
-    if (!isNear(state, tuning, point)) continue;
-    const d = distance(state.player, point);
-    const entry = { d, cell };
-    if (!any || d < any.d) any = entry;
-    if (needsAt(state, content, tuning, selectedSpore, cell.x, cell.y).ok && (!fit || d < fit.d)) fit = entry;
-  }
-  const pick = fit || any;
-  if (!pick) return null;
-  return {
-    action: { type: "startColony", species: selectedSpore, x: pick.cell.x, y: pick.cell.y },
-    label: "start a " + nameOf(selectedSpore) + " colony",
-  };
-}
-
-// Nearest colony in reach that could take compost, or null.
-export function nearestCompostable(state, tuning) {
-  let best = null;
-  for (const key of Object.keys(state.cells)) {
-    const cell = state.cells[key];
-    if (!cell.colony || cell.colony.composted) continue;
-    const point = cellCentre(cell.x, cell.y);
-    if (!isNear(state, tuning, point)) continue;
-    const d = distance(state.player, point);
-    if (!best || d < best.d) best = { d, cell };
-  }
-  return best ? best.cell : null;
-}
-
-// Nearest buyer in reach, or null.
-export function nearestBuyer(state, tuning) {
+// The buyer under a point (in cells; the creek strip is above row 0), or null.
+export function buyerAt(state, tuning, point) {
   let best = null;
   for (const buyer of state.buyers) {
-    const point = buyerPosition(tuning, buyer);
-    if (!isNear(state, tuning, point)) continue;
-    const d = distance(state.player, point);
+    const d = distance(buyerPosition(tuning, buyer), point);
+    if (d > tuning.pointReach) continue;
     if (!best || d < best.d) best = { d, buyer };
   }
   return best ? best.buyer : null;
+}
+
+// The owned cell under a point, or null.
+export function cellAt(state, point) {
+  return state.cells[cellKey(Math.floor(point.x), Math.floor(point.y))] || null;
+}
+
+// The wild species whose outline or flush sits on the cell under a point, or null.
+export function wildAt(state, point) {
+  const x = Math.floor(point.x);
+  const y = Math.floor(point.y);
+  for (const id of Object.keys(state.wild)) {
+    const w = state.wild[id];
+    if ((w.present || w.outline) && w.x === x && w.y === y) return id;
+  }
+  return null;
+}
+
+// What a click at a point would do. Returns { action, label }, where action can be passed
+// straight to engine.act(), or { action: null, label } when there is only something to say,
+// or null when there is nothing there at all.
+// On a colony the order is: pick, collect compost, tend, spread.
+export function actionAt(state, content, tuning, point, selectedSpore) {
+  const nameOf = (id) => findById(content.species, id).name;
+
+  const buyer = buyerAt(state, tuning, point);
+  if (buyer) {
+    const kind = findById(content.buyers, buyer.kind);
+    return { action: { type: "sell", buyer: buyer.id }, label: "sell to the " + kind.name };
+  }
+
+  const wild = wildAt(state, point);
+  if (wild) {
+    if (state.wild[wild].present) return { action: { type: "forage", species: wild }, label: "forage the wild " + nameOf(wild) };
+    return { action: null, label: "an outline of " + nameOf(wild) + ". " + nextCondition(state, content, tuning, wild) };
+  }
+
+  const cell = cellAt(state, point);
+  if (!cell) return null;
+  const at = { x: cell.x, y: cell.y };
+
+  if (cell.colony) {
+    const c = cell.colony;
+    const name = nameOf(c.species);
+    if (c.ready) return { action: { type: "pick", ...at }, label: "pick the " + name };
+    if (c.pile > 0) return { action: { type: "collectCompost", ...at }, label: "collect compost" };
+    const worst = worstCondition(content, tuning, c);
+    if (worst) return { action: { type: "tend", ...at, condition: worst.condition }, label: worst.chore + " the " + name };
+    const plan = spreadPlan(state, content, tuning, cell.x, cell.y);
+    if (plan.ok) return { action: { type: "spread", ...at }, label: "spread the " + name };
+    return { action: null, label: name + " colony: " + (c.stage === "fruiting" ? "still fruiting" : "can't spread yet, " + plan.reason) };
+  }
+
+  if (cell.piece) return { action: null, label: pieceName(content, cell.piece) };
+
+  if (!selectedSpore || !(state.spores[selectedSpore] > 0)) {
+    return { action: null, label: "a free cell. Forage a wild mushroom to get a spore to plant here" };
+  }
+  const needs = needsAt(state, content, tuning, selectedSpore, cell.x, cell.y);
+  const label = "plant " + aOrAn(nameOf(selectedSpore)) + " spore here" + (needs.ok ? "" : " (it needs " + needs.missing.join(" and ") + " beside it)");
+  return { action: { type: "startColony", species: selectedSpore, ...at }, label };
+}
+
+// The next condition in a species' ladder, in words.
+export function nextCondition(state, content, tuning, speciesId) {
+  const species = findById(content.species, speciesId);
+  const step = state.ladder[speciesId];
+  const needNames = species.needs.map((n) => pieceName(content, n));
+  if (species.host) needNames.push("an established " + findById(content.species, species.host).name + " colony");
+  if (!step || step === "appear") {
+    const w = state.wild[speciesId];
+    if (w && w.present) return "Visit: a wild flush is at the edge. Click it to forage.";
+    if (visitEligible(state, content, speciesId)) return "Visit: a wild flush is on its way.";
+    return "Visit: place " + visitMissing(state, content, speciesId).join(" and ") + " anywhere in the garden.";
+  }
+  if (step === "visit") return "Resident: plant its spore with " + needNames.join(" and ") + " beside it.";
+  if (step === "resident") {
+    return "Spread: two established colonies side by side, with " + pieceName(content, homePiece(species)) +
+      " beside them and a free cell next to both.";
+  }
+  return "All four steps done.";
+}
+
+// One entry per species that has appeared, in content order, plus totals.
+export function journal(state, content, tuning) {
+  const entries = [];
+  for (const species of content.species) {
+    const step = state.ladder[species.id];
+    if (!step) continue;
+    entries.push({
+      species: species.id,
+      name: species.name,
+      step,
+      stepNumber: LADDER.indexOf(step) + 1,
+      steps: LADDER.length,
+      next: nextCondition(state, content, tuning, species.id),
+    });
+  }
+  return {
+    entries,
+    unseen: content.species.length - entries.length,
+    awards: Object.keys(state.awards).length,
+    xp: state.xp,
+  };
 }

@@ -14,11 +14,6 @@ export function newGame(seed = 1) {
   return createEngine({ tuning, content, seed });
 }
 
-export function standAt(engine, x, y) {
-  engine.state.player.x = x;
-  engine.state.player.y = y;
-}
-
 // Puts a buyer of a given kind in the middle of its stay.
 export function addBuyer(engine, kindId, wants, favourite = null) {
   const s = engine.state;
@@ -38,10 +33,4 @@ export function addBuyer(engine, kindId, wants, favourite = null) {
   s.nextBuyerId += 1;
   s.buyers.push(buyer);
   return buyer;
-}
-
-// Where to stand to be next to a buyer added with addBuyer.
-export function standByBuyer(engine, buyer) {
-  if (buyer.route === "creek") standAt(engine, tuning.grid.cols / 2, 0.2);
-  else standAt(engine, tuning.land.standX, tuning.grid.rows - 0.2);
 }
